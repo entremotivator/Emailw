@@ -1,269 +1,251 @@
 import streamlit as st
-import gspread
-import pandas as pd
 import json
+import pandas as pd
 from datetime import datetime
-from google.oauth2.service_account import Credentials
 import time
 import re
+import random
 
 # ------------------------------
 # 🔧 PAGE CONFIGURATION
 # ------------------------------
 st.set_page_config(
-    page_title="Email Management Dashboard",
-    page_icon="📧",
+    page_title="InboxKeep - Colorful Card UI",
+    page_icon="📥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ------------------------------
-# 🎨 CUSTOM CSS
+# 🎨 CUSTOM CSS - Enhanced Colorful Card Theme
 # ------------------------------
-st.markdown("""
+# Using a more vibrant, consistent color palette (e.g., a mix of deep blues, teals, and bright accents)
+CUSTOM_CSS = """
 <style>
     /* Global Styling */
     .main {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        background: #f0f2f6; /* Light gray background for contrast */
     }
     
-    /* Email Cards - Enhanced with vibrant colors */
-    .email-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 2px solid #e0e7ff;
-        border-radius: 16px;
-        padding: 28px;
-        margin: 20px 0;
-        box-shadow: 0 4px 15px rgba(79, 70, 229, 0.15);
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
+    /* Streamlit's main content container padding */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 5rem;
+        padding-right: 5rem;
     }
-    .email-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 6px;
-        height: 100%;
-        background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+
+    /* Header Styling */
+    h1 {
+        color: #1e3a8a; /* Deep Blue */
+        font-weight: 800;
+        border-bottom: 3px solid #3b82f6;
+        padding-bottom: 10px;
     }
-    .email-card:hover {
-        transform: translateY(-6px);
-        box-shadow: 0 12px 30px rgba(79, 70, 229, 0.25);
-        border-color: #818cf8;
-    }
-    
-    .ai-reply-badge {
-        position: absolute;
-        top: 15px;
-        right: 15px;
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 25px;
-        font-size: 13px;
-        font-weight: 700;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-    }
-    
-    .ai-reply-preview {
-        background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-        border-left: 5px solid #10b981;
-        padding: 16px 20px;
-        margin: 16px 0;
-        border-radius: 10px;
-        font-size: 14px;
-        color: #065f46;
-        line-height: 1.7;
-        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
-    }
-    
-    .sender-info {
-        display: flex;
-        align-items: center;
-        margin-bottom: 16px;
-        margin-top: 10px;
-    }
-    .sender-avatar {
-        width: 56px;
-        height: 56px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: bold;
-        font-size: 22px;
-        margin-right: 16px;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        border: 3px solid white;
-    }
-    .sender-details {
-        flex: 1;
-    }
-    .sender-name {
-        font-weight: bold;
-        font-size: 19px;
-        color: #1f2937;
-        margin-bottom: 4px;
-    }
-    .sender-email {
-        color: #6b7280;
-        font-size: 14px;
-    }
-    .subject {
-        font-size: 22px;
-        font-weight: 700;
-        color: #111827;
-        margin: 18px 0 12px 0;
-        line-height: 1.4;
-        padding-left: 10px;
-    }
-    .summary {
-        color: #4b5563;
-        font-size: 16px;
-        line-height: 1.7;
-        margin-bottom: 20px;
-        padding-left: 10px;
-    }
-    .email-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 14px;
-        color: #9ca3af;
-        border-top: 2px solid #f3f4f6;
-        padding-top: 14px;
-        margin-bottom: 18px;
-        padding-left: 10px;
-    }
-    .date {
-        font-weight: 600;
-        color: #6366f1;
-    }
-    .attachment {
-        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-        color: #1e40af;
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 13px;
-    }
-    .no-attachment {
-        color: #d1d5db;
-        font-size: 13px;
-    }
-    
-    /* Stats Cards - More colorful */
+
+    /* --- Stats Cards (Dashboard Metrics) --- */
     .stats-container {
         display: flex;
         gap: 20px;
         margin-bottom: 35px;
     }
     .stat-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); /* Deep Blue to Bright Blue */
         color: white;
         padding: 30px;
         border-radius: 16px;
         text-align: center;
         flex: 1;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        transition: transform 0.3s ease;
+        box-shadow: 0 8px 25px rgba(30, 58, 138, 0.3);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border-left: 8px solid #60a5fa;
     }
     .stat-card:hover {
-        transform: translateY(-5px);
+        transform: translateY(-8px);
+        box-shadow: 0 15px 35px rgba(30, 58, 138, 0.5);
     }
-    .stat-card.green {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    .stat-card.teal {
+        background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); /* Dark Teal to Bright Teal */
+        border-left: 8px solid #5eead4;
     }
-    .stat-card.blue {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    .stat-card.purple {
+        background: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%); /* Deep Purple to Lavender */
+        border-left: 8px solid #c4b5fd;
     }
     .stat-card.orange {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+        background: linear-gradient(135deg, #c2410c 0%, #f97316 100%); /* Dark Orange to Bright Orange */
+        border-left: 8px solid #fdba74;
     }
     .stat-number {
-        font-size: 42px;
-        font-weight: bold;
-        margin-bottom: 10px;
+        font-size: 48px;
+        font-weight: 900;
+        margin-bottom: 5px;
+        line-height: 1;
     }
     .stat-label {
-        font-size: 15px;
+        font-size: 16px;
         opacity: 0.95;
         font-weight: 600;
+        letter-spacing: 0.5px;
     }
-    
-    /* Email Editor */
-    .editor-container {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+
+    /* --- Email Cards (Inbox Items) --- */
+    .email-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
         border-radius: 16px;
-        padding: 35px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-        margin: 25px 0;
-        border: 2px solid #e0e7ff;
+        padding: 25px;
+        margin: 15px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
     }
-    .editor-header {
-        font-size: 28px;
+    .email-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 25px rgba(30, 58, 138, 0.1);
+        border-color: #3b82f6;
+    }
+    
+    /* Priority Marker (Left Border) */
+    .email-card.priority-high::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #ef4444; /* Red for High Priority */
+    }
+    .email-card.priority-medium::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #f59e0b; /* Amber for Medium Priority */
+    }
+    .email-card.priority-low::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #10b981; /* Green for Low Priority */
+    }
+
+    .sender-info {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-left: 15px; /* Offset for the priority bar */
+    }
+    .sender-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #3b82f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
         font-weight: bold;
-        color: #111827;
-        margin-bottom: 25px;
-        border-bottom: 3px solid #667eea;
-        padding-bottom: 12px;
+        font-size: 20px;
+        margin-right: 15px;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
     }
-    
-    /* HTML Preview Box */
-    .html-preview {
-        background: white;
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 16px 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-    
-    /* Plain Text Display - Enhanced */
-    .plain-text-display {
-        background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-        border: 2px solid #d1d5db;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 16px 0;
-        font-family: 'Courier New', monospace;
-        font-size: 15px;
-        line-height: 1.8;
+    .sender-name {
+        font-weight: 700;
+        font-size: 18px;
         color: #1f2937;
-        white-space: pre-wrap;
-        word-wrap: break-word;
     }
-    
+    .sender-email {
+        color: #6b7280;
+        font-size: 13px;
+    }
+    .subject {
+        font-size: 20px;
+        font-weight: 800;
+        color: #111827;
+        margin: 10px 0 8px 0;
+        line-height: 1.3;
+        padding-left: 15px;
+    }
+    .summary {
+        color: #4b5563;
+        font-size: 15px;
+        line-height: 1.6;
+        margin-bottom: 15px;
+        padding-left: 15px;
+    }
+    .email-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+        color: #9ca3af;
+        border-top: 1px solid #f3f4f6;
+        padding-top: 10px;
+        margin-top: 10px;
+        padding-left: 15px;
+    }
+    .date {
+        font-weight: 600;
+        color: #3b82f6;
+    }
+    .tag {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .tag.ai {
+        background: #d1fae5; /* Light Green */
+        color: #065f46; /* Dark Green */
+    }
+    .tag.attachment {
+        background: #eff6ff; /* Light Blue */
+        color: #1e40af; /* Dark Blue */
+    }
+    .tag.no-attachment {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    /* AI Reply Preview */
+    .ai-reply-preview {
+        background: #f0f9ff; /* Very light blue background */
+        border-left: 4px solid #3b82f6;
+        padding: 15px;
+        margin: 10px 0 20px 15px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #1e3a8a;
+        line-height: 1.6;
+        box-shadow: 0 1px 5px rgba(59, 130, 246, 0.1);
+    }
+    .ai-reply-preview strong {
+        color: #1e3a8a;
+    }
+
     /* Draft Card Styling */
     .draft-card {
-        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-        border: 2px solid #fbbf24;
+        background: #fffbeb; /* Light Yellow/Amber */
+        border: 2px solid #fcd34d;
         border-radius: 14px;
         padding: 24px;
         margin: 16px 0;
-        box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+        box-shadow: 0 4px 12px rgba(252, 211, 77, 0.5);
         transition: all 0.3s ease;
     }
     .draft-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
+        transform: scale(1.01);
+        box-shadow: 0 8px 20px rgba(252, 211, 77, 0.7);
     }
-    
     .draft-badge {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        background: #f59e0b;
         color: white;
         padding: 6px 14px;
         border-radius: 20px;
@@ -271,281 +253,14 @@ st.markdown("""
         font-weight: 700;
         display: inline-block;
         margin-left: 12px;
-        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
-    }
-    
-    /* Template Cards */
-    .template-card {
-        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-        border-radius: 12px;
-        padding: 22px;
-        margin: 12px 0;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        border: 2px solid transparent;
-    }
-    .template-card:hover {
-        border-color: #667eea;
-        transform: scale(1.03);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    }
-    .template-title {
-        font-size: 19px;
-        font-weight: bold;
-        color: #1f2937;
-        margin-bottom: 10px;
-    }
-    .template-desc {
-        font-size: 14px;
-        color: #6b7280;
-        line-height: 1.5;
     }
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ------------------------------
-# 📝 EMAIL TEMPLATES
+# 📝 MOCK DATA GENERATION
 # ------------------------------
-EMAIL_TEMPLATES = {
-    "Professional Reply": {
-        "subject": "Re: {original_subject}",
-        "body": """<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <p>Dear {sender_name},</p>
-    <p>Thank you for your email regarding {subject}.</p>
-    <p>I have reviewed your message and would like to respond as follows:</p>
-    <p>[Your response here]</p>
-    <p>Please let me know if you need any further information or clarification.</p>
-    <p>Best regards,<br>
-    <strong>[Your Name]</strong><br>
-    [Your Title]<br>
-    [Your Contact Information]</p>
-</div>""",
-        "description": "Formal professional response template"
-    },
-    "Quick Acknowledgment": {
-        "subject": "Re: {original_subject}",
-        "body": """<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <p>Hi {sender_name},</p>
-    <p>Thanks for reaching out! I've received your message about {subject}.</p>
-    <p>I'm currently reviewing the details and will get back to you with a comprehensive response within 24-48 hours.</p>
-    <p>Thanks for your patience!</p>
-    <p>Best,<br>
-    <strong>[Your Name]</strong></p>
-</div>""",
-        "description": "Quick acknowledgment for received emails"
-    },
-    "Meeting Request": {
-        "subject": "Re: {original_subject} - Meeting Request",
-        "body": """<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <p>Hello {sender_name},</p>
-    <p>Thank you for your email about {subject}.</p>
-    <p>I think it would be beneficial to discuss this further in a meeting. Would you be available for a call this week?</p>
-    <p>Here are some time slots that work for me:</p>
-    <ul>
-        <li>[Day], [Time] - [Time]</li>
-        <li>[Day], [Time] - [Time]</li>
-        <li>[Day], [Time] - [Time]</li>
-    </ul>
-    <p>Please let me know which works best for you, or suggest an alternative time.</p>
-    <p>Looking forward to connecting!</p>
-    <p>Best regards,<br>
-    <strong>[Your Name]</strong></p>
-</div>""",
-        "description": "Request a meeting to discuss further"
-    },
-    "Follow-up": {
-        "subject": "Follow-up: {original_subject}",
-        "body": """<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <p>Hi {sender_name},</p>
-    <p>I wanted to follow up on my previous email regarding {subject}.</p>
-    <p>I understand you may be busy, but I'd appreciate any updates or feedback you might have when you get a chance.</p>
-    <p>Key points from my last message:</p>
-    <ul>
-        <li>[Point 1]</li>
-        <li>[Point 2]</li>
-        <li>[Point 3]</li>
-    </ul>
-    <p>Please let me know if you need any additional information from my end.</p>
-    <p>Thank you,<br>
-    <strong>[Your Name]</strong></p>
-</div>""",
-        "description": "Follow up on previous communication"
-    },
-    "Decline with Alternatives": {
-        "subject": "Re: {original_subject}",
-        "body": """<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    <p>Dear {sender_name},</p>
-    <p>Thank you for reaching out about {subject}.</p>
-    <p>Unfortunately, I won't be able to accommodate this request at this time due to [reason].</p>
-    <p>However, I'd like to suggest the following alternatives:</p>
-    <ul>
-        <li>[Alternative 1]</li>
-        <li>[Alternative 2]</li>
-    </ul>
-    <p>I hope one of these options works for you. Please don't hesitate to reach out if you'd like to discuss further.</p>
-    <p>Best regards,<br>
-    <strong>[Your Name]</strong></p>
-</div>""",
-        "description": "Politely decline with alternative suggestions"
-    }
-}
-
-# ------------------------------
-# 🧩 HELPER FUNCTIONS
-# ------------------------------
-def load_credentials_from_json(json_content):
-    """Load Google Sheets credentials from JSON content."""
-    try:
-        credentials_dict = json.loads(json_content)
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        return Credentials.from_service_account_info(credentials_dict, scopes=scope)
-    except Exception as e:
-        st.error(f"Error loading credentials: {str(e)}")
-        return None
-
-
-def connect_to_gsheet(credentials, sheet_url):
-    """Connect to Google Sheets and return the first worksheet."""
-    try:
-        gc = gspread.authorize(credentials)
-        sheet_id = sheet_url.split('/d/')[1].split('/')[0]
-        worksheet = gc.open_by_key(sheet_id).sheet1
-        return worksheet
-    except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {str(e)}")
-        return None
-
-
-def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"):
-    """Load data from Google Sheets into a DataFrame and populate drafts."""
-    try:
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
-        
-        gc = gspread.authorize(credentials)
-        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
-        worksheet = gc.open_by_key(sheet_id).sheet1
-        records = worksheet.get_all_records()
-        
-        if not records:
-            st.warning("Google Sheet is empty. Using sample data instead.")
-            return create_sample_data()
-        
-        df = pd.DataFrame(records)
-        
-        required_columns = ['sender name', 'sender email', 'subject', 'summary', 'Date', 'Attachment', 'AIreply', 'department']
-        for col in required_columns:
-            if col not in df.columns:
-                df[col] = ""
-        
-        # Initialize drafts if not exists
-        if 'drafts' not in st.session_state:
-            st.session_state['drafts'] = []
-        
-        # Clear existing drafts to reload from sheet
-        st.session_state['drafts'] = []
-        
-        drafts_loaded = 0
-        # Load AIreply content as drafts
-        for idx, row in df.iterrows():
-            ai_reply_value = row.get('AIreply', '')
-            
-            # More robust check for AIreply content
-            if ai_reply_value and pd.notna(ai_reply_value):
-                ai_reply_str = str(ai_reply_value).strip()
-                # Check if it's not empty and not just 'nan'
-                if ai_reply_str and ai_reply_str.lower() not in ['nan', 'none', '', 'null']:
-                    draft = {
-                        'original_email': {
-                            'sender name': str(row.get('sender name', 'Unknown')),
-                            'sender email': str(row.get('sender email', 'no-email@example.com')),
-                            'subject': str(row.get('subject', 'No Subject')),
-                            'summary': str(row.get('summary', '')),
-                            'Date': str(row.get('Date', '')),
-                            'Attachment': str(row.get('Attachment', '')),
-                            'department': str(row.get('department', ''))
-                        },
-                        'body': ai_reply_str,
-                        'timestamp': datetime.now().isoformat(),
-                        'subject': f"Re: {row.get('subject', 'No Subject')}",
-                        'row_index': idx + 2  # Google Sheets row number (1-indexed + header row)
-                    }
-                    st.session_state['drafts'].append(draft)
-                    drafts_loaded += 1
-        
-        # Show feedback
-        if drafts_loaded > 0:
-            st.success(f"✅ Loaded {drafts_loaded} draft(s) from Google Sheets AIreply column (Column G)!")
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        st.info("Using sample data instead.")
-        return create_sample_data()
-
-
-def create_sample_data():
-    """Fallback sample email dataset."""
-    return pd.DataFrame([
-        {
-            "sender name": "John Smith",
-            "sender email": "john.smith@company.com",
-            "subject": "Q4 Sales Report - Action Required",
-            "summary": "Please review the attached Q4 sales report and provide feedback by end of week.",
-            "Date": "2024-01-15",
-            "Attachment": "Yes",
-            "AIreply": "<div style='font-family: Arial, sans-serif;'><p>Dear John,</p><p>Thank you for sending the Q4 sales report. I have reviewed the document and it looks comprehensive. The numbers are impressive, showing a 15% increase compared to Q3.</p><p>I'll provide detailed feedback by Thursday as requested.</p><p>Best regards</p></div>",
-            "department": "Sales"
-        },
-        {
-            "sender name": "Sarah Johnson",
-            "sender email": "sarah.j@marketing.com",
-            "subject": "Marketing Campaign Results",
-            "summary": "The campaign exceeded expectations with a 25% increase in engagement.",
-            "Date": "2024-01-14",
-            "Attachment": "No",
-            "AIreply": "<div style='font-family: Arial, sans-serif;'><p>Hi Sarah,</p><p>Congratulations on the successful campaign! A 25% engagement increase is outstanding and demonstrates the effectiveness of your strategy.</p><p>Let's schedule a meeting to discuss scaling this approach for Q2.</p><p>Great work!</p></div>",
-            "department": "Marketing"
-        },
-        {
-            "sender name": "Mike Chen",
-            "sender email": "m.chen@tech.io",
-            "subject": "System Maintenance Scheduled",
-            "summary": "Server maintenance scheduled this weekend. Expected downtime: 2–4 hours.",
-            "Date": "2024-01-13",
-            "Attachment": "Yes",
-            "AIreply": "<div style='font-family: Arial, sans-serif;'><p>Hi Mike,</p><p>Thanks for the heads up about the scheduled maintenance. The 2-4 hour window works well for us.</p><p>Please confirm when the maintenance is complete so we can verify all systems are operational.</p><p>Thanks</p></div>",
-            "department": "IT"
-        },
-        {
-            "sender name": "Lisa Rodriguez",
-            "sender email": "lisa.r@hr.company.com",
-            "subject": "Team Building Event - Save the Date",
-            "summary": "Annual team building event next month. Please confirm your attendance.",
-            "Date": "2024-01-12",
-            "Attachment": "No",
-            "AIreply": "<div style='font-family: Arial, sans-serif;'><p>Hi Lisa,</p><p>Thanks for organizing the annual team building event! I'm happy to confirm my attendance.</p><p>Please let me know if you need any help with the planning or coordination.</p><p>Looking forward to it!</p></div>",
-            "department": "HR"
-        },
-        {
-            "sender name": "David Wilson",
-            "sender email": "d.wilson@finance.com",
-            "subject": "Budget Approval Request",
-            "summary": "Requesting approval for additional project budget. ROI details attached.",
-            "Date": "2024-01-11",
-            "Attachment": "Yes",
-            "AIreply": "<div style='font-family: Arial, sans-serif;'><p>Dear David,</p><p>I've reviewed your budget approval request along with the ROI projections you provided.</p><p>The numbers look solid and justify the additional investment. I'm approving the request. Please proceed with the next steps.</p><p>Best regards</p></div>",
-            "department": "Finance"
-        }
-    ])
-
 
 def get_initials(name):
     """Extract initials from sender name."""
@@ -556,13 +271,99 @@ def get_initials(name):
         return f"{parts[0][0]}{parts[-1][0]}".upper()
     return name[0].upper() if name else "?"
 
+def generate_mock_data(num_emails=15):
+    """Generates a longer list of mock email data."""
+    mock_senders = [
+        ("John Smith", "john.s@sales.com", "Sales"),
+        ("Sarah Johnson", "sarah.j@marketing.com", "Marketing"),
+        ("Mike Chen", "m.chen@tech.io", "IT"),
+        ("Lisa Rodriguez", "lisa.r@hr.company.com", "HR"),
+        ("David Wilson", "d.wilson@finance.com", "Finance"),
+        ("Emily Brown", "emily.b@support.com", "Support"),
+        ("Alex Green", "alex.g@product.com", "Product"),
+        ("Jessica Lee", "jessica.l@legal.com", "Legal"),
+    ]
+    
+    mock_subjects = [
+        "Urgent: Q4 Sales Report Review",
+        "Marketing Campaign Results for Q1 Launch",
+        "System Maintenance Scheduled for Weekend",
+        "Team Building Event - Save the Date",
+        "Budget Approval Request for Project Alpha",
+        "Follow-up on Customer Ticket #4567",
+        "New Feature Proposal: Dark Mode Implementation",
+        "Contract Review for Vendor X",
+        "Feedback on the latest UI/UX changes",
+        "Request for time-off approval",
+        "Invoice #2024-987 payment status",
+        "Security vulnerability report",
+        "Welcome to the new team member!",
+        "Quarterly performance review schedule",
+        "Important: Policy update on remote work",
+    ]
+    
+    mock_summaries = [
+        "The Q4 sales figures are attached for your review. Please provide feedback by EOD.",
+        "The campaign exceeded expectations with a 25% increase in engagement. Full report inside.",
+        "Server maintenance scheduled this weekend. Expected downtime: 2–4 hours. Details attached.",
+        "Annual team building event next month. Please confirm your attendance and dietary restrictions.",
+        "Requesting approval for additional project budget. ROI details attached for your consideration.",
+        "The customer is still experiencing login issues. Need your technical input on the solution.",
+        "Detailed proposal for implementing a dark mode theme across all platforms.",
+        "Legal review required for the new vendor contract before signing.",
+        "We've gathered user feedback on the recent design changes. Mostly positive, but a few concerns.",
+        "Requesting two days off next week for a personal appointment.",
+        "Checking on the status of the latest vendor invoice payment.",
+        "A critical security flaw was identified in the login module. Immediate action required.",
+        "Introducing our newest team member, [Name], who will be joining the [Department] team.",
+        "Your QPR meeting is scheduled for next Tuesday. Please prepare your self-assessment.",
+        "New guidelines for remote work eligibility and office attendance.",
+    ]
+    
+    emails = []
+    priorities = ["high", "medium", "low"]
+    
+    for i in range(num_emails):
+        sender_name, sender_email, department = random.choice(mock_senders)
+        subject = random.choice(mock_subjects)
+        summary = random.choice(mock_summaries)
+        
+        # Generate a date within the last 30 days
+        date_offset = random.randint(0, 30)
+        date = (datetime.now() - pd.Timedelta(days=date_offset)).strftime("%Y-%m-%d")
+        
+        has_attachment = random.choice(["Yes", "No"])
+        has_ai_reply = random.choice([True, False, False]) # Less frequent AI replies
+        priority = random.choice(priorities)
+        
+        ai_reply = ""
+        if has_ai_reply:
+            ai_reply = f"""<div style='font-family: Arial, sans-serif;'><p>Dear {sender_name},</p><p>Thank you for your email regarding <strong>{subject}</strong>. I have reviewed the summary and the proposed next steps.</p><p>I suggest we proceed with the following action: [Specific AI-suggested action].</p><p>I will follow up with a detailed response shortly.</p><p>Best regards</p></div>"""
+        
+        emails.append({
+            "sender name": sender_name,
+            "sender email": sender_email,
+            "subject": subject,
+            "summary": summary,
+            "Date": date,
+            "Attachment": has_attachment,
+            "AIreply": ai_reply,
+            "department": department,
+            "priority": priority
+        })
+        
+    return pd.DataFrame(emails)
+
+# ------------------------------
+# ⚙️ HELPER FUNCTIONS
+# ------------------------------
 
 def display_stats(df):
     """Display email statistics in colorful cards."""
     total_emails = len(df)
-    ai_replies = df['AIreply'].notna().sum() if 'AIreply' in df.columns else 0
-    with_attachments = df[df['Attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0] if 'Attachment' in df.columns else 0
-    drafts_count = len(st.session_state.get('drafts', []))
+    ai_replies = df['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"])).sum()
+    with_attachments = df[df['Attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0]
+    high_priority = df[df['priority'] == 'high'].shape[0]
     
     st.markdown("""
     <div class="stats-container">
@@ -570,23 +371,22 @@ def display_stats(df):
             <div class="stat-number">{}</div>
             <div class="stat-label">📧 Total Emails</div>
         </div>
-        <div class="stat-card green">
+        <div class="stat-card teal">
             <div class="stat-number">{}</div>
             <div class="stat-label">🤖 AI Replies Ready</div>
         </div>
-        <div class="stat-card blue">
+        <div class="stat-card purple">
             <div class="stat-number">{}</div>
-            <div class="stat-label">📎 With Attachments</div>
+            <div class="stat-label">🔥 High Priority</div>
         </div>
         <div class="stat-card orange">
             <div class="stat-number">{}</div>
-            <div class="stat-label">📋 Saved Drafts</div>
+            <div class="stat-label">📎 With Attachments</div>
         </div>
     </div>
-    """.format(total_emails, ai_replies, with_attachments, drafts_count), unsafe_allow_html=True)
+    """.format(total_emails, ai_replies, high_priority, with_attachments), unsafe_allow_html=True)
 
-
-def display_email_card(email_data, index, credentials_dict=None):
+def display_email_card(email_data, index):
     """Render one email entry as a colorful card with action buttons."""
     sender_name = email_data.get("sender name", "Unknown Sender")
     sender_email = email_data.get("sender email", "")
@@ -596,29 +396,33 @@ def display_email_card(email_data, index, credentials_dict=None):
     attachment = email_data.get("Attachment", "No")
     ai_reply = email_data.get("AIreply", "")
     department = email_data.get("department", "General")
+    priority = email_data.get("priority", "low")
     
     initials = get_initials(sender_name)
 
     try:
-        formatted_date = datetime.strptime(str(date), "%Y-%m-%d").strftime("%B %d, %Y")
+        formatted_date = datetime.strptime(str(date), "%Y-%m-%d").strftime("%b %d, %Y")
     except:
         formatted_date = str(date)
 
     has_attachment = str(attachment).lower() in ["yes", "true", "1"]
     has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
     
-    ai_reply_badge = ""
+    # Tags
+    attachment_tag = f'<span class="tag attachment">📎 Attachment</span>' if has_attachment else f'<span class="tag no-attachment">No Attachment</span>'
+    ai_tag = f'<span class="tag ai">🤖 AI Suggestion</span>' if has_ai_reply else ''
+    
+    # AI Reply Preview
     ai_reply_preview = ""
     if has_ai_reply:
-        ai_reply_badge = '<div class="ai-reply-badge">🤖 AI Reply Ready</div>'
         # Strip HTML tags for preview
         preview_text = re.sub('<[^<]+?>', '', str(ai_reply))
-        preview_text = preview_text[:200] + "..." if len(preview_text) > 200 else preview_text
-        ai_reply_preview = f'<div class="ai-reply-preview"><strong>🤖 AI Reply Preview:</strong><br/>{preview_text}</div>'
+        preview_text = preview_text.replace('\n', ' ').strip()
+        preview_text = preview_text[:150] + "..." if len(preview_text) > 150 else preview_text
+        ai_reply_preview = f'<div class="ai-reply-preview"><strong>AI Suggestion:</strong> {preview_text}</div>'
 
     card_html = f"""
-    <div class="email-card">
-        {ai_reply_badge}
+    <div class="email-card priority-{priority}">
         <div class="sender-info">
             <div class="sender-avatar">{initials}</div>
             <div class="sender-details">
@@ -630,419 +434,203 @@ def display_email_card(email_data, index, credentials_dict=None):
         <div class="summary">{summary}</div>
         {ai_reply_preview}
         <div class="email-meta">
-            <div class="date">📅 {formatted_date} | 🏢 {department}</div>
-            <div class="{attachment_class}">{attachment_text}</div>
+            <div class="date">📅 {formatted_date} | 🏢 {department} | Priority: {priority.upper()}</div>
+            <div>{ai_tag} {attachment_tag}</div>
         </div>
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
     
+    # Action buttons below the card
     col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
         if st.button("✉️ Reply", key=f"reply_{index}", use_container_width=True):
-            st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = dict(email_data)
-            st.session_state['selected_template'] = None
+            st.session_state['selected_email'] = email_data
+            st.session_state['mode'] = 'compose'
             st.session_state['use_ai_reply'] = False
-            st.session_state['draft_body'] = '' # Clear any existing draft body
             st.rerun()
     with col2:
-        ai_button_label = "🤖 Use AI Reply" if has_ai_reply else "🤖 No AI Reply"
-        if st.button(ai_button_label, key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True):
-            st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = dict(email_data)
-            st.session_state['selected_template'] = None
+        if st.button("🤖 Use AI Reply", key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True, type="primary"):
+            st.session_state['selected_email'] = email_data
+            st.session_state['mode'] = 'compose'
             st.session_state['use_ai_reply'] = True
-            st.session_state['draft_body'] = '' # Clear any existing draft body
             st.rerun()
     with col3:
-        if st.button("⚡ Quick Reply", key=f"quick_{index}", use_container_width=True):
-            st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = dict(email_data)
-            st.session_state['selected_template'] = "Quick Acknowledgment"
-            st.session_state['use_ai_reply'] = False
-            st.session_state['draft_body'] = '' # Clear any existing draft body
-            st.rerun()
+        if st.button("✅ Archive", key=f"archive_{index}", use_container_width=True):
+            st.toast(f"Archived email from {sender_name}!", icon="✅")
     with col4:
-        if st.button("📋 Save as Draft", key=f"draft_{index}", use_container_width=True):
-            draft_body = ai_reply if has_ai_reply else ""
-            save_draft(dict(email_data), draft_body, credentials_dict)
-            st.success("✅ Saved to drafts and Google Sheets!")
+        if st.button("🔥 Mark as High Priority", key=f"priority_{index}", use_container_width=True):
+            st.toast(f"Marked email from {sender_name} as High Priority!", icon="🔥")
     
-    st.markdown("---")
+    st.markdown("---") # Separator after buttons
 
-
-def save_draft(email_data, body, credentials_dict=None):
-    """Save email draft to session state and Google Sheets column G (AIreply)."""
-    if 'drafts' not in st.session_state:
-        st.session_state['drafts'] = []
+def render_inbox(df):
+    """Renders the main Inbox view."""
+    st.subheader("📬 Your Inbox")
     
-    draft = {
-        'original_email': email_data,
-        'body': body,
-        'timestamp': datetime.now().isoformat(),
-        'subject': f"Re: {email_data.get('subject', '')}"
-    }
-    st.session_state['drafts'].append(draft)
-    
-    # Write to Google Sheets if credentials available
-    if credentials_dict:
-        try:
-            scope = [
-                "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/drive"
-            ]
-            credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
-            gc = gspread.authorize(credentials)
-            sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
-            worksheet = gc.open_by_key(sheet_id).sheet1
-            
-            # Find the row with matching subject and sender email
-            all_data = worksheet.get_all_values()
-            headers = all_data[0]
-            
-            # Find AIreply column (column G)
-            aireply_col_idx = headers.index('AIreply') + 1 if 'AIreply' in headers else 7
-            
-            # Search for matching row
-            for row_idx, row in enumerate(all_data[1:], start=2):  # Start from row 2 (skip headers)
-                if (len(row) > 2 and 
-                    row[2] == email_data.get('subject', '') and 
-                    row[1] == email_data.get('sender email', '')):
-                    # Update AIreply column with draft body
-                    worksheet.update_cell(row_idx, aireply_col_idx, body)
-                    break
-                    
-        except Exception as e:
-            st.warning(f"Could not save to Google Sheets: {str(e)}")
-
-
-def render_email_composer(email_data=None, template_name=None):
-    """Render email composition interface with HTML and Plain Text modes."""
-    st.subheader("✍️ Compose Reply")
-    
-    has_email_data = email_data is not None and (isinstance(email_data, dict) or hasattr(email_data, 'get'))
-    
-    if has_email_data:
-        st.info(f"📬 Replying to: **{email_data.get('sender name')}** - {email_data.get('subject')}")
-    
-    use_ai_reply = st.session_state.get('use_ai_reply', False)
-    ai_reply_content = email_data.get('AIreply', '') if has_email_data and use_ai_reply else ''
-    
-    draft_body = st.session_state.get('draft_body', '')
-    
-    if use_ai_reply and ai_reply_content:
-        st.success("🤖 Using AI-generated reply from Google Sheets - Ready to send or edit!")
-    
-    st.subheader("📋 Choose a Template")
-    cols = st.columns(5)
-    
-    template_buttons = list(EMAIL_TEMPLATES.keys())
-    for idx, template_name_btn in enumerate(template_buttons):
-        with cols[idx]:
-            if st.button(f"📄 {template_name_btn.split()[0]}", key=f"template_{idx}", use_container_width=True):
-                st.session_state['selected_template'] = template_name_btn
-                st.session_state['use_ai_reply'] = False
-                st.session_state['draft_body'] = ''
-                st.rerun()
-    
-    selected_template = st.session_state.get('selected_template', template_name)
-    
-    if draft_body:
-        subject = f"Re: {email_data.get('subject', '')}" if has_email_data else "Draft Email"
-        body = draft_body
-        st.session_state['draft_body'] = ''
-    elif use_ai_reply and ai_reply_content:
-        subject = f"Re: {email_data.get('subject', '')}"
-        body = ai_reply_content
-    elif selected_template and selected_template in EMAIL_TEMPLATES:
-        template = EMAIL_TEMPLATES[selected_template]
-        st.success(f"✅ Using template: **{selected_template}** - {template['description']}")
-        
-        subject = template['subject'].format(
-            original_subject=email_data.get('subject', '') if has_email_data else ''
-        )
-        body = template['body'].format(
-            sender_name=email_data.get('sender name', '[Sender Name]') if has_email_data else '[Sender Name]',
-            subject=email_data.get('subject', '[Subject]') if has_email_data else '[Subject]'
-        )
+    if df.empty:
+        st.info("📭 No emails to display based on current filters.")
     else:
-        subject = f"Re: {email_data.get('subject', '')}" if has_email_data else ""
-        body = ""
-    
-    st.markdown("---")
-    
-    email_to = st.text_input("To:", value=email_data.get('sender email', '') if has_email_data else '')
-    email_subject = st.text_input("Subject:", value=subject)
-    
-    editor_mode = st.radio("Editor Mode:", ["HTML Editor", "Plain Text"], horizontal=True)
-    
-    if editor_mode == "HTML Editor":
-        st.markdown("**HTML Body:**")
-        email_body = st.text_area("Email Body", value=body, height=400, key="html_editor", label_visibility="collapsed")
-        
-        with st.expander("👁️ Preview HTML", expanded=False):
-            st.markdown(email_body, unsafe_allow_html=True)
+        for index, row in df.iterrows():
+            display_email_card(row.to_dict(), index)
+
+def render_compose(email_data=None, use_ai_reply=False):
+    """Renders the email composition interface."""
+    if email_data:
+        st.subheader(f"✍️ Composing Reply to: {email_data.get('sender name')}")
+        st.caption(f"Original Subject: {email_data.get('subject')}")
+        to_email = email_data.get('sender email')
+        default_subject = f"Re: {email_data.get('subject')}"
     else:
-        st.markdown("**Plain Text Message:**")
-        
-        plain_body = re.sub('<[^<]+?>', '', body) if body else ""
-        plain_body = plain_body.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
-        
-        email_body = st.text_area("Email Body", value=plain_body, height=350, key="plain_editor", 
-                                   label_visibility="collapsed",
-                                   placeholder="Type your message here in plain text...")
-        
-        if email_body:
-            with st.expander("👁️ Preview Plain Text", expanded=False):
-                st.text(email_body)
-    
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
-    
-    with col1:
-        if st.button("📤 Send", type="primary", use_container_width=True):
-            if email_to and email_subject and email_body:
-                st.success(f"✅ Email sent to {email_to}!")
-                st.balloons()
-                st.session_state['composing_email'] = False
-                st.session_state['selected_template'] = None
-                st.session_state['use_ai_reply'] = False
-                if 'draft_body' in st.session_state:
-                    del st.session_state['draft_body']
-                st.session_state['reply_to'] = None # Clear reply context
-                st.rerun()
-            else:
-                st.error("⚠️ Please fill in all fields before sending.")
-    
-    with col2:
-        if st.button("💾 Save Draft", use_container_width=True):
-            if has_email_data or email_to or email_subject or email_body: # Save even if no initial email data
-                save_draft(email_data if has_email_data else {}, email_body) # Pass original data or empty dict
-                st.success("✅ Draft saved!")
-            else:
-                st.warning("No content to save.")
-    
-    with col3:
-        if st.button("🔄 Clear", use_container_width=True):
-            st.session_state['composing_email'] = False
-            st.session_state['selected_template'] = None
-            st.session_state['use_ai_reply'] = False
-            st.session_state['reply_to'] = None
-            if 'draft_body' in st.session_state:
-                del st.session_state['draft_body']
-            st.rerun()
-    
-    with col4:
-        st.markdown("**Total Characters:** " + str(len(email_body)) if email_body else "0")
+        st.subheader("✉️ New Message")
+        to_email = ""
+        default_subject = ""
 
-
-def display_email_card(email_data, index, credentials_dict=None):
-    """Render one email entry as a colorful card using only Streamlit components."""
-    sender_name = email_data.get("sender name", "Unknown Sender")
-    sender_email = email_data.get("sender email", "")
-    subject = email_data.get("subject", "No Subject")
-    summary = email_data.get("summary", "No summary available")
-    date = email_data.get("Date", "")
-    attachment = email_data.get("Attachment", "No")
-    ai_reply = email_data.get("AIreply", "")
-    department = email_data.get("department", "General")
-    
-    initials = get_initials(sender_name)
-
-    try:
-        formatted_date = datetime.strptime(str(date), "%Y-%m-%d").strftime("%B %d, %Y")
-    except:
-        formatted_date = str(date)
-
-    has_attachment = str(attachment).lower() in ["yes", "true", "1"]
-    has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
-    
-    # Create card using Streamlit container
     with st.container():
-        # Header row with avatar and sender info
-        col_avatar, col_info = st.columns([1, 6])
+        st.markdown('<div class="editor-container">', unsafe_allow_html=True)
         
-        with col_avatar:
-            st.markdown(f"### {initials}")
+        col_to, col_cc = st.columns(2)
+        with col_to:
+            to = st.text_input("To:", value=to_email, key="compose_to")
+        with col_cc:
+            cc = st.text_input("CC/BCC:", key="compose_cc")
         
-        with col_info:
-            st.markdown(f"**{sender_name}**")
-            st.caption(f"{sender_email}")
-            if has_ai_reply:
-                st.success("🤖 AI Reply Ready", icon="✅")
+        subject = st.text_input("Subject:", value=default_subject, key="compose_subject")
         
-        # Subject and summary
-        st.subheader(f"📧 {subject}")
-        st.write(summary)
+        default_body = ""
+        if use_ai_reply and email_data and email_data.get('AIreply'):
+            # Extract plain text from the AI reply HTML for the text area
+            ai_reply_html = email_data.get('AIreply')
+            default_body = re.sub('<[^<]+?>', '', ai_reply_html).replace('\n', ' ').strip()
+            st.info("🤖 AI-suggested reply loaded into the body.")
         
-        # AI Reply Preview
-        if has_ai_reply:
-            with st.expander("🤖 View AI-Generated Reply"):
-                preview_text = re.sub('<[^<]+?>', '', str(ai_reply))
-                preview_text = preview_text[:500] + "..." if len(preview_text) > 500 else preview_text
-                st.info(preview_text)
+        body = st.text_area("Body:", value=default_body, height=300, key="compose_body")
         
-        # Metadata row
-        col_date, col_dept, col_attach = st.columns(3)
-        with col_date:
-            st.caption(f"📅 {formatted_date}")
-        with col_dept:
-            st.caption(f"🏢 {department}")
-        with col_attach:
-            if has_attachment:
-                st.caption("📎 Has Attachment")
-            else:
-                st.caption("No Attachment")
-        
-        # Action buttons
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            if st.button("✉️ Reply", key=f"reply_{index}", use_container_width=True):
-                st.session_state['composing_email'] = True
-                st.session_state['reply_to'] = dict(email_data)
-                st.session_state['selected_template'] = None
-                st.session_state['use_ai_reply'] = False
-                st.session_state['draft_body'] = ''
-                st.rerun()
-        with col2:
-            ai_button_label = "🤖 Use AI Reply" if has_ai_reply else "🤖 No AI Reply"
-            if st.button(ai_button_label, key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True):
-                st.session_state['composing_email'] = True
-                st.session_state['reply_to'] = dict(email_data)
-                st.session_state['selected_template'] = None
-                st.session_state['use_ai_reply'] = True
-                st.session_state['draft_body'] = ''
-                st.rerun()
-        with col3:
-            if st.button("⚡ Quick Reply", key=f"quick_{index}", use_container_width=True):
-                st.session_state['composing_email'] = True
-                st.session_state['reply_to'] = dict(email_data)
-                st.session_state['selected_template'] = "Quick Acknowledgment"
-                st.session_state['use_ai_reply'] = False
-                st.session_state['draft_body'] = ''
-                st.rerun()
-        with col4:
-            if st.button("💾 Save Draft", key=f"save_draft_{index}", use_container_width=True):
-                save_draft(email_data, "")
-                st.success("Draft saved!")
-        
-        st.divider()
+        st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown("---")
+    col_send, col_draft, col_cancel = st.columns([2, 2, 6])
+    
+    with col_send:
+        if st.button("📤 Send Email", use_container_width=True, type="primary"):
+            if to and subject and body:
+                st.success(f"✅ Email sent to {to} with subject: '{subject}'")
+                st.balloons()
+                st.session_state['mode'] = 'inbox'
+                st.session_state['selected_email'] = None
+                st.rerun()
+            else:
+                st.error("Please fill in To, Subject, and Body fields.")
+    
+    with col_draft:
+        if st.button("📋 Save Draft", use_container_width=True):
+            if to and subject:
+                draft = {
+                    'to': to,
+                    'subject': subject,
+                    'body': body,
+                    'timestamp': datetime.now().isoformat()
+                }
+                if 'drafts' not in st.session_state:
+                    st.session_state['drafts'] = []
+                st.session_state['drafts'].append(draft)
+                st.success(f"✅ Draft saved: '{subject}'")
+                st.session_state['mode'] = 'inbox'
+                st.session_state['selected_email'] = None
+                st.rerun()
+            else:
+                st.error("Draft must have a recipient and subject.")
+
+    with col_cancel:
+        if st.button("❌ Cancel", use_container_width=False):
+            st.session_state['mode'] = 'inbox'
+            st.session_state['selected_email'] = None
+            st.rerun()
 
 def render_drafts():
-    """Render drafts management interface using only Streamlit native components."""
-    st.subheader("📋 Saved Drafts from AIreply Column")
-    st.caption("*These drafts are pulled from Column G (AIreply) in your Google Sheet*")
-    st.divider()
+    """Renders the drafts management interface."""
+    st.subheader("📋 Saved Drafts")
     
     drafts = st.session_state.get('drafts', [])
     
     if not drafts:
-        st.info("📭 No drafts found. Add AI-generated replies to Column G (AIreply) in your Google Sheet to see them here.")
-        st.markdown("**Google Sheet URL:** https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit")
+        st.info("📭 No drafts currently saved.")
         return
     
-    st.metric("Total Drafts", len(drafts))
-    st.divider()
-    
-    # Display each draft as a native Streamlit card
-    for idx, draft in enumerate(drafts):
-        original = draft.get('original_email', {})
-        draft_subject = draft.get('subject', 'No Subject')
-        draft_body = draft.get('body', '')
-        draft_time = draft.get('timestamp', '')
-        row_num = draft.get('row_index', 'N/A')
-        
-        # Format timestamp
-        try:
-            dt = datetime.fromisoformat(draft_time)
-            formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
-        except:
-            formatted_time = "Recently loaded"
-        
-        # Get sender info
-        sender_name = original.get('sender name', 'Unknown Sender')
-        sender_email = original.get('sender email', 'no-email@example.com')
-        original_subject = original.get('subject', 'No Subject')
-        department = original.get('department', 'General')
-        
-        # Get initials for avatar
-        initials = get_initials(sender_name)
-        
-        # Create draft card using Streamlit container
-        with st.container():
-            # Draft badge
-            st.success(f"DRAFT #{idx + 1} - From Row {row_num}", icon="📝")
-            
-            # Header row with avatar and sender info
-            col_avatar, col_info = st.columns([1, 6])
-            
-            with col_avatar:
-                st.markdown(f"### {initials}")
-            
-            with col_info:
-                st.markdown(f"**{sender_name}**")
-                st.caption(f"{sender_email}")
-                st.caption(f"🏢 {department}")
-            
-            # Subject information
-            st.subheader(f"📧 {draft_subject}")
-            st.caption(f"**Original Subject:** {original_subject}")
-            st.caption(f"**Loaded:** {formatted_time}")
-            
-            # Draft content preview
-            with st.expander("📄 View Draft Content from AIreply Column", expanded=False):
-                st.markdown("**Draft Email Body:**")
-                # Show HTML content rendered
-                st.markdown(draft_body, unsafe_allow_html=True)
-                
-                st.divider()
-                
-                # Also show plain text version
-                st.markdown("**Plain Text Version:**")
-                plain_text = re.sub('<[^<]+?>', '', draft_body)
-                st.text(plain_text[:1000] + "..." if len(plain_text) > 1000 else plain_text)
-            
-            # Action buttons
-            col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-            with col1:
-                if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True, type="primary"):
-                    st.session_state['composing_email'] = True
-                    st.session_state['reply_to'] = original
-                    st.session_state['editing_draft'] = idx
-                    st.session_state['draft_body'] = draft_body
-                    st.session_state['selected_template'] = None
-                    st.session_state['use_ai_reply'] = False
-                    st.rerun()
-            
-            with col2:
-                if st.button("📤 Send Now", key=f"send_draft_{idx}", use_container_width=True):
-                    st.success(f"✅ Email sent to {sender_email}!")
-                    st.balloons()
-                    st.session_state['drafts'].pop(idx)
-                    st.rerun()
-            
-            with col3:
-                if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
-                    st.session_state['drafts'].pop(idx)
-                    st.success("✅ Draft deleted!")
-                    st.rerun()
-            
-            with col4:
-                st.caption(f"📊 Draft length: {len(draft_body)} characters")
-            
-            st.divider()
-
-
-def main():
-    """Main application function."""
-    st.title("📧 Email Management Dashboard")
-    st.markdown("**Manage your emails efficiently with AI-powered replies**")
+    st.metric("Total Saved Drafts", len(drafts))
     st.markdown("---")
     
-    # Sidebar configuration
+    for idx, draft in enumerate(drafts):
+        with st.container():
+            st.markdown(f'<div class="draft-card">', unsafe_allow_html=True)
+            
+            # Header
+            st.markdown(f"**Draft #{idx + 1}** | Saved: {datetime.fromisoformat(draft['timestamp']).strftime('%B %d, %Y at %I:%M %p')}")
+            st.markdown(f"**To:** `{draft['to']}`")
+            st.markdown(f"**Subject:** `{draft['subject']}`")
+            
+            # Content Preview
+            with st.expander("📄 View/Edit Draft Content", expanded=False):
+                st.text_area(f"Draft Body (Draft {idx+1})", value=draft['body'], height=200, key=f"draft_body_edit_{idx}")
+                
+                col_update, col_delete = st.columns(2)
+                with col_update:
+                    if st.button("💾 Update Draft", key=f"update_draft_{idx}", use_container_width=True, type="primary"):
+                        # Update the draft body from the text area
+                        st.session_state['drafts'][idx]['body'] = st.session_state[f"draft_body_edit_{idx}"]
+                        st.toast("Draft updated successfully!", icon="💾")
+                        st.rerun()
+                with col_delete:
+                    if st.button("🗑️ Delete Draft", key=f"delete_draft_{idx}", use_container_width=True):
+                        st.session_state['drafts'].pop(idx)
+                        st.toast("Draft deleted!", icon="🗑️")
+                        st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("---")
+
+def main():
+    """Main application function for the single-page Streamlit app."""
+    
+    # Initialize session state for navigation and data
+    if 'mode' not in st.session_state:
+        st.session_state['mode'] = 'inbox' # 'inbox', 'compose', 'drafts'
+    if 'selected_email' not in st.session_state:
+        st.session_state['selected_email'] = None
+    if 'use_ai_reply' not in st.session_state:
+        st.session_state['use_ai_reply'] = False
+    if 'df' not in st.session_state:
+        st.session_state['df'] = generate_mock_data(num_emails=25) # Longer content
+
+    st.title("📥 InboxKeep: Colorful Card UI Theme")
+    st.markdown("A **full-page** Streamlit application demonstrating a vibrant, card-based UI for an email management dashboard.")
+    st.markdown("---")
+    
+    # --- Sidebar Configuration (Filters and Actions) ---
     with st.sidebar:
-        st.markdown("### ⚙️ Configuration")
+        st.markdown("### ⚙️ Navigation & Filters")
+        
+        # Main Navigation
+        mode_options = {
+            'inbox': "📥 Inbox",
+            'compose': "✉️ Compose",
+            'drafts': "📋 Drafts"
+        }
+        
+        # Use a radio button for clear navigation
+        current_mode = st.radio(
+            "Select View:",
+            options=list(mode_options.keys()),
+            format_func=lambda x: mode_options[x],
+            key='sidebar_mode_select'
+        )
+        
+        # Update session state mode
+        if current_mode != st.session_state['mode']:
+            st.session_state['mode'] = current_mode
+            st.session_state['selected_email'] = None # Clear selection on mode change
+            st.rerun()
+
         st.markdown("---")
         
         # JSON Credentials Upload
@@ -1060,102 +648,78 @@ def main():
         
         st.markdown("---")
         
-        # Google Sheets URL (hardcoded)
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit?usp=sharing"
-        st.markdown(f"**📊 Google Sheet:**")
-        st.code(sheet_url, language=None)
-        
-        st.markdown("---")
-        
-        # Department filter
-        st.markdown("#### 🏢 Filter by Department")
-        department_filter = st.selectbox(
-            "Select Department:",
-            ["All", "Sales", "Marketing", "IT", "HR", "Finance", "General"],
-            index=0
-        )
-        
-        # Sort option
-        st.markdown("#### 📑 Sort Emails")
-        sort_option = st.selectbox(
-            "Sort by:",
-            ["Date (Newest First)", "Date (Oldest First)", "AI Replies First", "Sender Name"],
-            index=0
-        )
-        
-        # Auto-refresh
-        st.markdown("#### 🔄 Auto Refresh")
-        auto_refresh = st.checkbox("Enable Auto Refresh", value=False)
-        refresh_interval = 60
-        if auto_refresh:
-            refresh_interval = st.slider("Refresh Interval (seconds)", 30, 300, 60)
-        
-        st.markdown("---")
-        st.markdown("### 📊 Stats Overview")
-    
-    # Load data
-    if credentials_dict:
-        df = load_data_from_gsheet(credentials_dict)
-    else:
-        st.warning("Please upload Google Sheets credentials in the sidebar.")
-        df = create_sample_data()
-    
-    if not df.empty:
-        # Apply department filter
-        if department_filter != "All":
-            df = df[df['department'] == department_filter]
-        
-        # Apply sorting
-        if sort_option == "Date (Newest First)":
-            df = df.sort_values('Date', ascending=False)
-        elif sort_option == "Date (Oldest First)":
-            df = df.sort_values('Date', ascending=True)
-        elif sort_option == "AI Replies First":
-            df['has_ai_reply'] = df['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))
-            df = df.sort_values(['has_ai_reply', 'Date'], ascending=[False, False])
-            df = df.drop('has_ai_reply', axis=1)
-        elif sort_option == "Sender Name":
-            df = df.sort_values('sender name')
-        
-        # Display statistics
-        display_stats(df)
-    
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["📥 Inbox", "✍️ Compose", "📋 Drafts"])
-    
-    with tab1:
-        st.markdown("### 📬 Your Emails")
-        
-        if df.empty:
-            st.info("📭 No emails to display for the selected department.")
-        else:
-            for index, row in df.iterrows():
-                display_email_card(row.to_dict(), index, credentials_dict)
-        
-        if auto_refresh:
-            time.sleep(refresh_interval)
-            st.rerun()
-    
-    with tab2:
-        if st.session_state.get('composing_email', False):
-            render_email_composer(
-                email_data=st.session_state.get('reply_to'),
-                template_name=st.session_state.get('selected_template')
-            )
-        else:
-            st.info("💡 Go to the Inbox tab and click 'Reply' or 'AI Reply' on any email to start composing, or create a new email below.")
+        # Filters (Only visible in Inbox mode)
+        if st.session_state['mode'] == 'inbox':
+            st.markdown("#### 🔍 Inbox Filters")
             
-            if st.button("✉️ Compose New Email", type="primary"):
-                st.session_state['composing_email'] = True
-                st.session_state['reply_to'] = None
-                st.session_state['selected_template'] = None
-                st.session_state['use_ai_reply'] = False
-                st.session_state['draft_body'] = '' # Clear draft body for new email
-                st.rerun()
-    
-    with tab3:
-        render_drafts()
+            # Department filter
+            all_departments = ['All'] + sorted(st.session_state['df']['department'].unique().tolist())
+            department_filter = st.selectbox(
+                "Filter by Department:",
+                all_departments,
+                key='dept_filter'
+            )
+            
+            # Priority filter
+            priority_filter = st.selectbox(
+                "Filter by Priority:",
+                ["All", "high", "medium", "low"],
+                key='priority_filter'
+            )
+            
+            # Sort option
+            sort_option = st.selectbox(
+                "Sort by:",
+                ["Date (Newest First)", "Date (Oldest First)", "AI Replies First", "Priority (High First)"],
+                key='sort_option'
+            )
+            
+            # Apply filters and sorting to a temporary DataFrame
+            df_filtered = st.session_state['df'].copy()
+            
+            if department_filter != "All":
+                df_filtered = df_filtered[df_filtered['department'] == department_filter]
+            
+            if priority_filter != "All":
+                df_filtered = df_filtered[df_filtered['priority'] == priority_filter]
+            
+            # Apply sorting
+            if sort_option == "Date (Newest First)":
+                df_filtered = df_filtered.sort_values('Date', ascending=False)
+            elif sort_option == "Date (Oldest First)":
+                df_filtered = df_filtered.sort_values('Date', ascending=True)
+            elif sort_option == "AI Replies First":
+                df_filtered['has_ai_reply'] = df_filtered['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))
+                df_filtered = df_filtered.sort_values(['has_ai_reply', 'Date'], ascending=[False, False])
+                df_filtered = df_filtered.drop('has_ai_reply', axis=1)
+            elif sort_option == "Priority (High First)":
+                priority_order = pd.CategoricalDtype(['high', 'medium', 'low'], ordered=True)
+                df_filtered['priority'] = df_filtered['priority'].astype(priority_order)
+                df_filtered = df_filtered.sort_values(['priority', 'Date'], ascending=[True, False])
+            
+            st.session_state['df_view'] = df_filtered
+        
+        st.markdown("---")
+        st.markdown("#### 📊 Data Source")
+        st.info(f"Showing **{len(st.session_state.get('df_view', st.session_state['df']))}** emails.")
+        st.caption("This is a mock-up with generated data for demonstration.")
 
+
+    # --- Main Content Rendering ---
+    
+    if st.session_state['mode'] == 'inbox':
+        # Display stats based on the filtered view
+        display_stats(st.session_state.get('df_view', st.session_state['df']))
+        render_inbox(st.session_state.get('df_view', st.session_state['df']))
+        
+    elif st.session_state['mode'] == 'compose':
+        render_compose(
+            email_data=st.session_state.get('selected_email'),
+            use_ai_reply=st.session_state.get('use_ai_reply', False)
+        )
+        
+    elif st.session_state['mode'] == 'drafts':
+        render_drafts()
 
 if __name__ == "__main__":
     main()
