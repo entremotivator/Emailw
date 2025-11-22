@@ -335,17 +335,37 @@ def connect_to_gsheet(credentials, sheet_url):
         return None
 
 
-def load_data_from_gsheet(credentials):
+def load_data_from_gsheet(credentials_dict):
     """Load data from Google Sheets into a DataFrame."""
     try:
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
+        
         gc = gspread.authorize(credentials)
         sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
         worksheet = gc.open_by_key(sheet_id).sheet1
         records = worksheet.get_all_records()
-        return pd.DataFrame(records)
+        
+        if not records:
+            st.warning("⚠️ Google Sheet is empty. Using sample data instead.")
+            return create_sample_data()
+        
+        df = pd.DataFrame(records)
+        
+        # Ensure required columns exist
+        required_columns = ['sender name', 'sender email', 'subject', 'summary', 'Date', 'Attachment', 'AIreply', 'department']
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = ""
+        
+        return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
-        return pd.DataFrame()
+        st.info("📊 Using sample data instead...")
+        return create_sample_data()
 
 
 def create_sample_data():
