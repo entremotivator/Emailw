@@ -375,13 +375,53 @@ def create_sample_data():
 
 
 def get_initials(name):
-    """Get initials from sender name."""
-    parts = name.split()
+    """Extract initials from sender name."""
+    if not name or name == "Unknown Sender":
+        return "?"
+    parts = name.strip().split()
     if len(parts) >= 2:
-        return f"{parts[0][0]}{parts[1][0]}".upper()
-    elif len(parts) == 1:
-        return parts[0][0].upper()
-    return "?"
+        return f"{parts[0][0]}{parts[-1][0]}".upper()
+    return name[0].upper() if name else "?"
+
+
+def display_stats(df):
+    """Display statistics about emails in a nice card layout."""
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-number">{len(df)}</div>
+            <div class="stat-label">📬 Total Emails</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        ai_replies = len(df[df['AIreply'].notna() & (df['AIreply'] != '')]) if 'AIreply' in df.columns else 0
+        st.markdown(f"""
+        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <div class="stat-number">{ai_replies}</div>
+            <div class="stat-label">🤖 AI Replies Ready</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        attachments = len(df[df['Attachment'].str.lower().isin(['yes', 'true', '1'])]) if 'Attachment' in df.columns else 0
+        st.markdown(f"""
+        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <div class="stat-number">{attachments}</div>
+            <div class="stat-label">📎 With Attachments</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        drafts_count = len(st.session_state.get('drafts', []))
+        st.markdown(f"""
+        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <div class="stat-number">{drafts_count}</div>
+            <div class="stat-label">📝 Saved Drafts</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 def display_email_card(email_data, index):
