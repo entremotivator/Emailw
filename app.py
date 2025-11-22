@@ -378,6 +378,72 @@ def render_compose(email_data=None):
         st.rerun()
 
 
+def render_drafts():
+    """Renders the drafts page showing saved draft emails."""
+    st.markdown("## 📋 Drafts")
+    
+    if 'drafts' not in st.session_state or len(st.session_state['drafts']) == 0:
+        st.info("No drafts saved yet. Compose an email and save it as a draft to see it here!")
+        
+        if st.button("✉️ Compose New Email"):
+            st.session_state['mode'] = 'compose'
+            st.session_state['selected_email'] = None
+            st.rerun()
+        return
+    
+    st.success(f"You have **{len(st.session_state['drafts'])}** saved draft(s).")
+    st.markdown("---")
+    
+    for idx, draft in enumerate(st.session_state['drafts']):
+        with st.container():
+            st.markdown(f"### Draft #{idx + 1}")
+            st.markdown(f"**To:** {draft.get('to', 'N/A')}")
+            st.markdown(f"**Subject:** {draft.get('subject', 'No Subject')}")
+            st.markdown(f"**Saved:** {draft.get('timestamp', 'Unknown')}")
+            
+            with st.expander("View Draft Body"):
+                st.markdown(draft.get('body', 'No content'), unsafe_allow_html=True)
+            
+            col1, col2, col3 = st.columns([1, 1, 3])
+            with col1:
+                if st.button("✏️ Edit", key=f"edit_draft_{idx}", use_container_width=True):
+                    st.session_state['selected_email'] = draft.get('original_email')
+                    st.session_state['mode'] = 'compose'
+                    # Pre-fill with draft content
+                    st.session_state['draft_to_edit'] = draft
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
+                    st.session_state['drafts'].pop(idx)
+                    st.toast("Draft deleted!", icon="🗑️")
+                    st.rerun()
+            
+            st.markdown("---")
+    
+    if st.button("⬅️ Back to Inbox"):
+        st.session_state['mode'] = 'inbox'
+        st.rerun()
+
+
+def render_inbox(df, credentials_dict=None):
+    """Renders the inbox page with email cards and stats."""
+    st.markdown("## 📥 Inbox")
+    
+    # Display statistics
+    display_stats(df)
+    
+    st.markdown("---")
+    st.markdown(f"### 📬 {len(df)} Email(s)")
+    
+    if len(df) == 0:
+        st.info("No emails to display with the current filters.")
+        return
+    
+    # Display each email as a card
+    for idx, row in df.iterrows():
+        display_email_card(row.to_dict(), idx, credentials_dict)
+
+
 def main():
     """Main application function for the single-page Streamlit app."""
     
@@ -513,3 +579,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
