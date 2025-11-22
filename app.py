@@ -2,15 +2,13 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
-import time
-
-# Import your existing modules
-try:
-    from gmail_utils import fetch_emails, send_email
-    from sheets_utils import read_sheet_data, write_sheet_data, append_sheet_data, ensure_columns_exist
-    from openai_utils import generate_email_draft, classify_email, batch_generate_drafts_and_tags
-except ImportError:
-    st.error("Required modules not found. Ensure gmail_utils.py, sheets_utils.py, and openai_utils.py are available.")
+import os
+import requests
+import base64
+from email.mime.text import MIMEText
+from openai import OpenAI
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 # Page config
 st.set_page_config(
@@ -66,7 +64,370 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# ==================== OPENAI UTILS ====================
+def get_openai_client():
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        raise Exception('OPENAI_API_KEY not found in environment variables')
+    return OpenAI(api_key=api_key)
+
+def generate_email_draft(subject, sender_name, email_body, template_type="Professional", tone="Neutral", length="Medium", custom_instructions=""):
+    try:
+        client = get_openai_client()
+        
+        prompt = f"""You are an AI assistant helping to draft professional email responses.
+
+Original Email Details:
+From: {sender_name}
+Subject: {subject}
+Body: {email_body}
+
+Template Style: {template_type}
+Tone: {tone}
+Length: {length}
+{f'Additional Instructions: {custom_instructions}' if custom_instructions else ''}
+
+Generate a professional, concise, and appropriate email reply. Keep it friendly and to the point.
+Only provide the email body text, no subject line or greetings like "Dear [Name]"."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that generates professional email responses."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        draft = response.choices[0].message.content
+        return draft.strip() if draft else "No draft generated"
+    except Exception as e:
+        return f"Error generating draft: {str(e)}"
+
+def classify_email(subject, sender_name, email_body):
+    try:
+        client = get_openai_client()
+        
+        prompt = f"""Classify the following email into ONE of these categories:
+- Business
+- Personal
+- Marketing
+- Notification
+- Support
+- Urgent
+- Newsletter
+- Spam
+
+Email Details:
+From: {sender_name}
+Subject: {subject}
+Body: {email_body}
+
+Respond with ONLY the category name, nothing else."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that classifies emails into categories."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=20
+        )
+        
+        tag = response.choices[0].message.content
+        return tag.strip() if tag else "Unclassified"
+    except Exception as e:
+        return "Unclassified"
+
+def batch_generate_drafts_and_tags(emails_df):
+    results = []
+    
+    for _, email in emails_df.iterrows():
+        subject = email.get('subject', 'No Subject')
+        sender_name = email.get('sender name', 'Unknown')
+        summary = email.get('summary', '')
+        
+        draft = generate_email_draft(subject, sender_name, summary)
+        tag = classify_email(subject, sender_name, summary)
+        
+        results.append({
+            'draft': draft,
+            'tag': tag
+        })
+    
+    return results
+
+# ==================== GMAIL UTILS ====================
+def get_gmail_access_token():
+    hostname = os.environ.get('REPLIT_CONNECTORS_HOSTNAME')
+    
+    repl_identity = os.environ.get('REPL_IDENTITY')
+    web_repl_renewal = os.environ.get('WEB_REPL_RENEWAL')
+    
+    if repl_identity:
+        x_replit_token = f'repl {repl_identity}'
+    elif web_repl_renewal:
+        x_replit_token = f'depl {web_repl_renewal}'
+    else:
+        raise Exception('X_REPLIT_TOKEN not found for repl/depl')
+    
+    url = f'https://{hostname}/api/v2/connection?include_secrets=true&connector_names=google-mail'
+    
+    response = requests.get(
+        url,
+        headers={
+            'Accept': 'application/json',
+            'X_REPLIT_TOKEN': x_replit_token
+        }
+    )
+    
+    data = response.json()
+    connection_settings = data.get('items', [])[0] if data.get('items') else None
+    
+    if not connection_settings:
+        raise Exception('Gmail not connected')
+    
+    access_token = (
+        connection_settings.get('settings', {}).get('access_token') or 
+        connection_settings.get('settings', {}).get('oauth', {}).get('credentials', {}).get('access_token')
+    )
+    
+    if not access_token:
+        raise Exception('Gmail access token not found')
+    
+    return access_token
+
+def get_gmail_service():
+    access_token = get_gmail_access_token()
+    credentials = Credentials(token=access_token)
+    service = build('gmail', 'v1', credentials=credentials)
+    return service
+
+def fetch_emails(max_results=50):
+    try:
+        service = get_gmail_service()
+        
+        results = service.users().messages().list(
+            userId='me',
+            maxResults=max_results,
+            labelIds=['INBOX']
+        ).execute()
+        
+        messages = results.get('messages', [])
+        
+        emails = []
+        for msg in messages:
+            message = service.users().messages().get(
+                userId='me',
+                id=msg['id'],
+                format='full'
+            ).execute()
+            
+            email_data = parse_email(message)
+            emails.append(email_data)
+        
+        return emails
+    except Exception as e:
+        st.error(f"Error fetching emails: {e}")
+        return []
+
+def parse_email(message):
+    headers = message['payload']['headers']
+    
+    subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+    sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
+    date = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
+    
+    sender_email = sender
+    sender_name = sender
+    if '<' in sender and '>' in sender:
+        sender_name = sender.split('<')[0].strip()
+        sender_email = sender.split('<')[1].split('>')[0].strip()
+    
+    body = get_email_body(message['payload'])
+    
+    has_attachments = 'No'
+    if 'parts' in message['payload']:
+        for part in message['payload']['parts']:
+            if part.get('filename'):
+                has_attachments = 'Yes'
+                break
+    
+    try:
+        date_obj = datetime.strptime(date.split('(')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
+        formatted_date = date_obj.strftime('%m/%d/%Y, %I:%M %p')
+    except:
+        formatted_date = date
+    
+    return {
+        'message_id': message['id'],
+        'thread_id': message['threadId'],
+        'sender name': sender_name,
+        'sender email': sender_email,
+        'subject': subject,
+        'summary': body[:500] if body else 'No content',
+        'Date': formatted_date,
+        'Attachment': has_attachments,
+        'generated_email_draft': '',
+        'email_tag': ''
+    }
+
+def get_email_body(payload):
+    if 'parts' in payload:
+        for part in payload['parts']:
+            if part['mimeType'] == 'text/plain':
+                if 'data' in part['body']:
+                    return base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
+            elif part['mimeType'] == 'multipart/alternative':
+                return get_email_body(part)
+    
+    if 'body' in payload and 'data' in payload['body']:
+        return base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8')
+    
+    return ''
+
+def send_email(to_email, subject, body, reply_to_message_id=None):
+    try:
+        service = get_gmail_service()
+        
+        message = MIMEText(body)
+        message['to'] = to_email
+        message['subject'] = subject
+        
+        if reply_to_message_id:
+            message['In-Reply-To'] = reply_to_message_id
+            message['References'] = reply_to_message_id
+        
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+        
+        send_message = service.users().messages().send(
+            userId='me',
+            body={'raw': raw_message}
+        ).execute()
+        
+        return True, f"Email sent successfully! Message ID: {send_message['id']}"
+    except Exception as e:
+        return False, f"Error sending email: {str(e)}"
+
+# ==================== SHEETS UTILS ====================
+def get_sheets_access_token():
+    hostname = os.environ.get('REPLIT_CONNECTORS_HOSTNAME')
+    
+    repl_identity = os.environ.get('REPL_IDENTITY')
+    web_repl_renewal = os.environ.get('WEB_REPL_RENEWAL')
+    
+    if repl_identity:
+        x_replit_token = f'repl {repl_identity}'
+    elif web_repl_renewal:
+        x_replit_token = f'depl {web_repl_renewal}'
+    else:
+        raise Exception('X_REPLIT_TOKEN not found for repl/depl')
+    
+    url = f'https://{hostname}/api/v2/connection?include_secrets=true&connector_names=google-sheet'
+    
+    response = requests.get(
+        url,
+        headers={
+            'Accept': 'application/json',
+            'X_REPLIT_TOKEN': x_replit_token
+        }
+    )
+    
+    data = response.json()
+    connection_settings = data.get('items', [])[0] if data.get('items') else None
+    
+    if not connection_settings:
+        raise Exception('Google Sheets not connected')
+    
+    access_token = (
+        connection_settings.get('settings', {}).get('access_token') or 
+        connection_settings.get('settings', {}).get('oauth', {}).get('credentials', {}).get('access_token')
+    )
+    
+    if not access_token:
+        raise Exception('Google Sheets access token not found')
+    
+    return access_token
+
+def get_sheets_service():
+    access_token = get_sheets_access_token()
+    credentials = Credentials(token=access_token)
+    service = build('sheets', 'v4', credentials=credentials)
+    return service
+
+def extract_sheet_id(url):
+    if '/d/' in url:
+        return url.split('/d/')[1].split('/')[0]
+    return url
+
+def read_sheet_data(sheet_url, range_name='Sheet1'):
+    try:
+        service = get_sheets_service()
+        sheet_id = extract_sheet_id(sheet_url)
+        
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range=range_name
+        ).execute()
+        
+        values = result.get('values', [])
+        
+        if not values:
+            return pd.DataFrame()
+        
+        headers = values[0]
+        rows = values[1:]
+        
+        df = pd.DataFrame(rows, columns=headers)
+        return df
+    except Exception as e:
+        st.error(f"Error reading sheet: {e}")
+        return pd.DataFrame()
+
+def write_sheet_data(sheet_url, df, range_name='Sheet1'):
+    try:
+        service = get_sheets_service()
+        sheet_id = extract_sheet_id(sheet_url)
+        
+        headers = df.columns.tolist()
+        values = [headers] + df.values.tolist()
+        
+        body = {'values': values}
+        
+        result = service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range=range_name,
+            valueInputOption='RAW',
+            body=body
+        ).execute()
+        
+        return True, f"Updated {result.get('updatedCells')} cells"
+    except Exception as e:
+        return False, f"Error writing to sheet: {str(e)}"
+
+def append_sheet_data(sheet_url, df, range_name='Sheet1'):
+    try:
+        service = get_sheets_service()
+        sheet_id = extract_sheet_id(sheet_url)
+        
+        values = df.values.tolist()
+        body = {'values': values}
+        
+        result = service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range=range_name,
+            valueInputOption='RAW',
+            insertDataOption='INSERT_ROWS',
+            body=body
+        ).execute()
+        
+        return True, f"Appended {result.get('updates', {}).get('updatedRows')} rows"
+    except Exception as e:
+        return False, f"Error appending to sheet: {str(e)}"
+
+# ==================== SESSION STATE ====================
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'emails_df' not in st.session_state:
@@ -78,7 +439,7 @@ if 'generated_draft' not in st.session_state:
 if 'email_template' not in st.session_state:
     st.session_state.email_template = "professional"
 
-# Authentication in Sidebar
+# ==================== SIDEBAR AUTHENTICATION ====================
 with st.sidebar:
     st.markdown("### 🔐 Authentication")
     
@@ -99,7 +460,6 @@ with st.sidebar:
         st.markdown("#### Enter API Keys")
         openai_key = st.text_input("OpenAI API Key", type="password")
         if openai_key:
-            import os
             os.environ['OPENAI_API_KEY'] = openai_key
             st.session_state.authenticated = True
             st.success("✅ API Key set!")
@@ -128,17 +488,17 @@ with st.sidebar:
             if len(most_common) > 0:
                 st.metric("Most Common Tag", most_common[0])
 
-# Main header
+# ==================== MAIN HEADER ====================
 st.markdown('<div class="main-header">📧 Email Management System</div>', unsafe_allow_html=True)
 
 if not st.session_state.authenticated:
     st.markdown('<div class="warning-box">⚠️ Please authenticate using the sidebar to continue.</div>', unsafe_allow_html=True)
     st.stop()
 
-# Main tabs
+# ==================== MAIN TABS ====================
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📥 Fetch Emails", "✍️ Email Generator", "📤 Send Email", "📊 Google Sheets", "📋 Templates"])
 
-# TAB 1: Fetch Emails
+# ==================== TAB 1: FETCH EMAILS ====================
 with tab1:
     st.markdown('<div class="sub-header">Fetch and Process Emails</div>', unsafe_allow_html=True)
     
@@ -171,9 +531,13 @@ with tab1:
             if 'email_tag' in st.session_state.emails_df.columns:
                 tags = ['All'] + list(st.session_state.emails_df['email_tag'].unique())
                 selected_tag = st.selectbox("Filter by tag", tags)
+            else:
+                selected_tag = 'All'
         with col3:
             if 'Attachment' in st.session_state.emails_df.columns:
                 attachment_filter = st.selectbox("Has attachments?", ['All', 'Yes', 'No'])
+            else:
+                attachment_filter = 'All'
         
         # Apply filters
         filtered_df = st.session_state.emails_df.copy()
@@ -220,7 +584,7 @@ with tab1:
                 use_container_width=True
             )
 
-# TAB 2: Email Generator
+# ==================== TAB 2: EMAIL GENERATOR ====================
 with tab2:
     st.markdown('<div class="sub-header">AI Email Draft Generator</div>', unsafe_allow_html=True)
     
@@ -270,15 +634,14 @@ with tab2:
         if st.button("✨ Generate Draft", use_container_width=True, type="primary"):
             with st.spinner("Generating email draft..."):
                 try:
-                    # Build enhanced prompt
-                    prompt_additions = f"\n\nTemplate: {template_type}\nTone: {tone}\nLength: {length}"
-                    if custom_instructions:
-                        prompt_additions += f"\nAdditional instructions: {custom_instructions}"
-                    
                     draft = generate_email_draft(
                         selected_email['subject'],
                         selected_email['sender name'],
-                        selected_email['summary'] + prompt_additions
+                        selected_email['summary'],
+                        template_type,
+                        tone,
+                        length,
+                        custom_instructions
                     )
                     st.session_state.generated_draft = draft
                     st.success("✅ Draft generated!")
@@ -314,7 +677,7 @@ with tab2:
     else:
         st.info("👆 Please fetch emails first from the 'Fetch Emails' tab.")
 
-# TAB 3: Send Email
+# ==================== TAB 3: SEND EMAIL ====================
 with tab3:
     st.markdown('<div class="sub-header">Send Email</div>', unsafe_allow_html=True)
     
@@ -331,12 +694,15 @@ with tab3:
         col1, col2 = st.columns([3, 1])
         with col2:
             st.markdown("**Quick Insert:**")
-            if st.form_submit_button("➕ Signature", use_container_width=True):
-                default_body += "\n\nBest regards,\n[Your Name]"
-            if st.form_submit_button("➕ Meeting Link", use_container_width=True):
-                default_body += "\n\nJoin meeting: [Insert Link]"
+            add_signature = st.form_submit_button("➕ Signature", use_container_width=True)
+            add_meeting = st.form_submit_button("➕ Meeting Link", use_container_width=True)
         
         body = st.text_area("Message:", value=default_body, height=300)
+        
+        if add_signature:
+            body += "\n\nBest regards,\n[Your Name]"
+        if add_meeting:
+            body += "\n\nJoin meeting: [Insert Link]"
         
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -355,7 +721,6 @@ with tab3:
                         
                         if success:
                             st.success(f"✅ {message}")
-                            # Clear draft
                             st.session_state.generated_draft = ""
                             st.session_state.selected_email = None
                         else:
@@ -363,7 +728,7 @@ with tab3:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-# TAB 4: Google Sheets
+# ==================== TAB 4: GOOGLE SHEETS ====================
 with tab4:
     st.markdown('<div class="sub-header">Google Sheets Integration</div>', unsafe_allow_html=True)
     
@@ -447,7 +812,7 @@ with tab4:
             mime="text/csv"
         )
 
-# TAB 5: Templates
+# ==================== TAB 5: TEMPLATES ====================
 with tab5:
     st.markdown('<div class="sub-header">Email Templates Library</div>', unsafe_allow_html=True)
     
@@ -532,10 +897,80 @@ Your assistance would be greatly appreciated.
 
 Best regards,
 [Your Name]"""
+        },
+        "Out of Office": {
+            "subject": "Out of Office - {your_name}",
+            "body": """Thank you for your email.
+
+I am currently out of the office from {start_date} to {end_date} with limited access to email.
+
+For urgent matters, please contact {alternate_contact} at {alternate_email}.
+
+I will respond to your message upon my return.
+
+Best regards,
+[Your Name]"""
+        },
+        "Project Update": {
+            "subject": "Project Update: {project_name}",
+            "body": """Hi {sender_name},
+
+I wanted to provide you with an update on {project_name}.
+
+Progress Summary:
+- {accomplishment_1}
+- {accomplishment_2}
+- {accomplishment_3}
+
+Next Steps:
+- {next_step_1}
+- {next_step_2}
+
+Timeline: {timeline_info}
+
+Please let me know if you have any questions or concerns.
+
+Best regards,
+[Your Name]"""
+        },
+        "Apology Email": {
+            "subject": "Apology regarding {issue}",
+            "body": """Dear {sender_name},
+
+I sincerely apologize for {issue}. I understand this may have caused {impact}.
+
+{explanation}
+
+To resolve this, I have {action_taken}.
+
+Moving forward, {prevention_plan}.
+
+Thank you for your patience and understanding.
+
+Best regards,
+[Your Name]"""
+        },
+        "Introduction Email": {
+            "subject": "Introduction: {your_name}",
+            "body": """Hi {sender_name},
+
+My name is {your_name} and I am {your_role} at {company}.
+
+I'm reaching out because {reason_for_contact}.
+
+{value_proposition}
+
+Would you be open to a brief call {timeframe} to discuss this further?
+
+Looking forward to connecting.
+
+Best regards,
+[Your Name]"""
         }
     }
     
-    st.markdown("### Available Templates")
+    st.markdown("### 📚 Available Templates")
+    st.markdown("Select a template below to view and use it in your emails.")
     
     for template_name, template_content in templates.items():
         with st.expander(f"📋 {template_name}"):
@@ -551,20 +986,71 @@ Best regards,
     st.markdown("### 📝 Create Custom Template")
     
     with st.form("custom_template_form"):
-        custom_name = st.text_input("Template Name:")
-        custom_subject = st.text_input("Subject Template:")
-        custom_body = st.text_area("Body Template:", height=200)
+        custom_name = st.text_input("Template Name:", placeholder="My Custom Template")
+        custom_subject = st.text_input("Subject Template:", placeholder="Re: {topic}")
+        custom_body = st.text_area(
+            "Body Template:", 
+            height=200,
+            placeholder="""Hi {sender_name},
+
+{main_content}
+
+Best regards,
+[Your Name]"""
+        )
         
-        if st.form_submit_button("💾 Save Custom Template"):
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("💾 Save Custom Template", use_container_width=True)
+        with col2:
+            preview = st.form_submit_button("👁️ Preview Template", use_container_width=True)
+        
+        if submitted:
             if custom_name and custom_body:
-                st.success(f"✅ Template '{custom_name}' saved! (Note: Restart needed to persist)")
+                # Save to session state for this session
+                if 'custom_templates' not in st.session_state:
+                    st.session_state.custom_templates = {}
+                st.session_state.custom_templates[custom_name] = {
+                    'subject': custom_subject,
+                    'body': custom_body
+                }
+                st.success(f"✅ Template '{custom_name}' saved for this session!")
             else:
                 st.warning("Please fill in template name and body.")
+        
+        if preview:
+            if custom_body:
+                st.markdown("#### Preview:")
+                st.code(custom_body, language=None)
+            else:
+                st.warning("Please enter template body to preview.")
+    
+    # Display custom templates
+    if 'custom_templates' in st.session_state and st.session_state.custom_templates:
+        st.markdown("---")
+        st.markdown("### 🎨 Your Custom Templates")
+        
+        for custom_name, custom_content in st.session_state.custom_templates.items():
+            with st.expander(f"✨ {custom_name} (Custom)"):
+                st.markdown(f"**Subject:** `{custom_content['subject']}`")
+                st.markdown("**Body:**")
+                st.code(custom_content['body'], language=None)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"Use {custom_name}", key=f"use_custom_{custom_name}"):
+                        st.session_state.generated_draft = custom_content['body']
+                        st.success(f"✅ Custom template '{custom_name}' loaded!")
+                with col2:
+                    if st.button(f"Delete {custom_name}", key=f"delete_{custom_name}"):
+                        del st.session_state.custom_templates[custom_name]
+                        st.rerun()
 
-# Footer
+# ==================== FOOTER ====================
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 1rem;'>
     <p>📧 Email Management System | Built with Streamlit | Powered by OpenAI & Google APIs</p>
+    <p style='font-size: 0.8rem;'>All-in-One Solution: Gmail Integration • AI Email Generation • Google Sheets Sync</p>
 </div>
 """, unsafe_allow_html=True)
