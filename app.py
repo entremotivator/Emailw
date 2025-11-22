@@ -292,13 +292,31 @@ st.sidebar.title("🔧 Derive JSON Configuration")
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("📝 Service Account JSON")
-st.sidebar.markdown("Paste your Google Service Account JSON credentials below:")
+st.sidebar.markdown("""
+<div style='background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 12px;'>
+    <p style='margin: 0; color: white; font-size: 14px;'>
+        Paste your complete Google Service Account JSON credentials below. 
+        This file is required for Gmail API and Google Sheets integration.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 json_input = st.sidebar.text_area(
     "JSON Credentials",
-    height=200,
-    placeholder='{\n  "type": "service_account",\n  "project_id": "your-project",\n  ...\n}',
-    help="Paste the entire JSON file content from your Google Cloud Service Account"
+    height=400,
+    placeholder='''{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "your-private-key-id",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\nYour-Private-Key-Here\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "your-service-account@your-project.iam.gserviceaccount.com",
+  "client_id": "your-client-id",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
+}''',
+    help="Paste the entire JSON file content from your Google Cloud Service Account. Get it from Google Cloud Console → IAM & Admin → Service Accounts"
 )
 
 if st.sidebar.button("🔐 Authenticate Services", use_container_width=True):
@@ -369,10 +387,39 @@ st.markdown("""
         padding-top: 2rem;
     }
     
+    /* Set all card text to black for better readability */
+    div[data-testid="stExpander"] {
+        background: white;
+        border-radius: 12px;
+        border: 2px solid #e2e8f0;
+        margin-bottom: 1rem;
+        color: #000000 !important;
+    }
+    
+    div[data-testid="stExpander"] * {
+        color: #000000 !important;
+    }
+    
+    div[data-testid="stExpander"] .streamlit-expanderHeader {
+        color: #000000 !important;
+    }
+    
+    div[data-testid="stExpander"] p,
+    div[data-testid="stExpander"] span,
+    div[data-testid="stExpander"] strong,
+    div[data-testid="stExpander"] em {
+        color: #000000 !important;
+    }
+    
     /* Stats cards */
     [data-testid="stMetricValue"] {
         font-size: 2.5rem;
         font-weight: 900;
+        color: #000000 !important;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        color: #000000 !important;
     }
     
     /* Buttons */
@@ -385,14 +432,6 @@ st.markdown("""
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-    }
-    
-    /* Email cards custom styling */
-    div[data-testid="stExpander"] {
-        background: white;
-        border-radius: 12px;
-        border: 2px solid #e2e8f0;
-        margin-bottom: 1rem;
     }
     
     /* Sidebar styling */
@@ -415,6 +454,26 @@ st.markdown("""
         color: white !important;
     }
     
+    [data-testid="stSidebar"] label {
+        color: white !important;
+    }
+    
+    /* Enhanced JSON text area styling in sidebar */
+    [data-testid="stSidebar"] textarea {
+        background: rgba(255, 255, 255, 0.95) !important;
+        color: #1a1a1a !important;
+        font-family: 'Courier New', monospace !important;
+        font-size: 12px !important;
+        border: 2px solid rgba(255, 255, 255, 0.3) !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+    }
+    
+    [data-testid="stSidebar"] textarea::placeholder {
+        color: #666666 !important;
+        opacity: 0.7 !important;
+    }
+    
     /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -424,6 +483,18 @@ st.markdown("""
         border-radius: 8px;
         padding: 12px 24px;
         font-weight: 600;
+    }
+    
+    /* Container backgrounds for better contrast */
+    div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+    }
+    
+    /* Info boxes */
+    .stInfo, .stSuccess, .stWarning, .stError {
+        color: #000000 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -802,3 +873,4 @@ st.markdown("""
     <p>🔐 Secure • 🤖 AI-Powered • 📊 Analytics-Driven</p>
 </div>
 """, unsafe_allow_html=True)
+
