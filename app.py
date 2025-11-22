@@ -18,6 +18,246 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ------------------------------
+# 🎨 CUSTOM CSS - Enhanced Colorful Card Theme
+# ------------------------------
+CUSTOM_CSS = """
+<style>
+    /* Global Styling */
+    .main {
+        background: #f0f2f6; /* Light gray background for contrast */
+    }
+    
+    /* Streamlit's main content container padding */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 5rem;
+        padding-right: 5rem;
+    }
+
+    /* Header Styling */
+    h1 {
+        color: #1e3a8a; /* Deep Blue */
+        font-weight: 800;
+        border-bottom: 3px solid #3b82f6;
+        padding-bottom: 10px;
+    }
+
+    /* --- Stats Cards (Dashboard Metrics) --- */
+    .stats-container {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 35px;
+    }
+    .stat-card {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); /* Deep Blue to Bright Blue */
+        color: white;
+        padding: 30px;
+        border-radius: 16px;
+        text-align: center;
+        flex: 1;
+        box-shadow: 0 8px 25px rgba(30, 58, 138, 0.3);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border-left: 8px solid #60a5fa;
+    }
+    .stat-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 15px 35px rgba(30, 58, 138, 0.5);
+    }
+    .stat-card.teal {
+        background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); /* Dark Teal to Bright Teal */
+        border-left: 8px solid #5eead4;
+    }
+    .stat-card.purple {
+        background: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%); /* Deep Purple to Lavender */
+        border-left: 8px solid #c4b5fd;
+    }
+    .stat-card.orange {
+        background: linear-gradient(135deg, #c2410c 0%, #f97316 100%); /* Dark Orange to Bright Orange */
+        border-left: 8px solid #fdba74;
+    }
+    .stat-number {
+        font-size: 48px;
+        font-weight: 900;
+        margin-bottom: 5px;
+        line-height: 1;
+    }
+    .stat-label {
+        font-size: 16px;
+        opacity: 0.95;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    /* --- Email Cards (Inbox Items) --- */
+    .email-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 25px;
+        margin: 15px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .email-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 25px rgba(30, 58, 138, 0.1);
+        border-color: #3b82f6;
+    }
+    
+    /* Priority Marker (Left Border) */
+    .email-card.priority-high::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #ef4444; /* Red for High Priority */
+    }
+    .email-card.priority-medium::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #f59e0b; /* Amber for Medium Priority */
+    }
+    .email-card.priority-low::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 8px;
+        height: 100%;
+        background: #10b981; /* Green for Low Priority */
+    }
+
+    .sender-info {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-left: 15px; /* Offset for the priority bar */
+    }
+    .sender-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #3b82f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 20px;
+        margin-right: 15px;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+    .sender-name {
+        font-weight: 700;
+        font-size: 18px;
+        color: #1f2937;
+    }
+    .sender-email {
+        color: #6b7280;
+        font-size: 13px;
+    }
+    .subject {
+        font-size: 20px;
+        font-weight: 800;
+        color: #111827;
+        margin: 10px 0 8px 0;
+        line-height: 1.3;
+        padding-left: 15px;
+    }
+    .summary {
+        color: #4b5563;
+        font-size: 15px;
+        line-height: 1.6;
+        margin-bottom: 15px;
+        padding-left: 15px;
+    }
+    .email-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+        color: #9ca3af;
+        border-top: 1px solid #f3f4f6;
+        padding-top: 10px;
+        margin-top: 10px;
+        padding-left: 15px;
+    }
+    .date {
+        font-weight: 600;
+        color: #3b82f6;
+    }
+    .tag {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 12px;
+    }
+    .tag.ai {
+        background: #d1fae5; /* Light Green */
+        color: #065f46; /* Dark Green */
+    }
+    .tag.attachment {
+        background: #eff6ff; /* Light Blue */
+        color: #1e40af; /* Dark Blue */
+    }
+    .tag.no-attachment {
+        background: #f3f4f6;
+        color: #6b7280;
+    }
+
+    /* AI Reply Preview */
+    .ai-reply-preview {
+        background: #f0f9ff; /* Very light blue background */
+        border-left: 4px solid #3b82f6;
+        padding: 15px;
+        margin: 10px 0 20px 15px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #1e3a8a;
+        line-height: 1.6;
+        box-shadow: 0 1px 5px rgba(59, 130, 246, 0.1);
+    }
+    .ai-reply-preview strong {
+        color: #1e3a8a;
+    }
+
+    /* Draft Card Styling */
+    .draft-card {
+        background: #fffbeb; /* Light Yellow/Amber */
+        border: 2px solid #fcd34d;
+        border-radius: 14px;
+        padding: 24px;
+        margin: 16px 0;
+        box-shadow: 0 4px 12px rgba(252, 211, 77, 0.5);
+        transition: all 0.3s ease;
+    }
+    .draft-card:hover {
+        transform: scale(1.01);
+        box-shadow: 0 8px 20px rgba(252, 211, 77, 0.7);
+    }
+    .draft-badge {
+        background: #f59e0b;
+        color: white;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+        display: inline-block;
+        margin-left: 12px;
+    }
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ------------------------------
 # 📝 MOCK DATA GENERATION
@@ -579,4 +819,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
