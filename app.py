@@ -85,13 +85,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
     }
     
-    .ai-reply-preview strong {
-        color: #047857;
-        display: block;
-        margin-bottom: 8px;
-        font-size: 15px;
-    }
-    
     .sender-info {
         display: flex;
         align-items: center;
@@ -427,7 +420,7 @@ def connect_to_gsheet(credentials, sheet_url):
 
 
 def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"):
-    """Load data from Google Sheets into a DataFrame."""
+    """Load data from Google Sheets into a DataFrame and populate drafts."""
     try:
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -436,13 +429,12 @@ def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlk
         credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
         
         gc = gspread.authorize(credentials)
-        # sheet_id = sheet_url.split('/d/')[1].split('/')[0] # This line was hardcoded before
-        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc" # Keep hardcoded for now, can be made dynamic
+        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
         worksheet = gc.open_by_key(sheet_id).sheet1
         records = worksheet.get_all_records()
         
         if not records:
-            st.warning("⚠️ Google Sheet is empty. Using sample data instead.")
+            st.warning("Google Sheet is empty. Using sample data instead.")
             return create_sample_data()
         
         df = pd.DataFrame(records)
@@ -453,10 +445,34 @@ def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlk
             if col not in df.columns:
                 df[col] = ""
         
+        if 'drafts' not in st.session_state:
+            st.session_state['drafts'] = []
+        
+        # Clear existing drafts and reload from sheet
+        st.session_state['drafts'] = []
+        
+        for idx, row in df.iterrows():
+            if pd.notna(row.get('AIreply')) and str(row.get('AIreply', '')).strip():
+                draft = {
+                    'original_email': {
+                        'sender name': row.get('sender name', ''),
+                        'sender email': row.get('sender email', ''),
+                        'subject': row.get('subject', ''),
+                        'summary': row.get('summary', ''),
+                        'Date': row.get('Date', ''),
+                        'Attachment': row.get('Attachment', ''),
+                        'department': row.get('department', '')
+                    },
+                    'body': row.get('AIreply', ''),
+                    'timestamp': datetime.now().isoformat(),
+                    'subject': f"Re: {row.get('subject', '')}"
+                }
+                st.session_state['drafts'].append(draft)
+        
         return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
-        st.info("📊 Using sample data instead...")
+        st.info("Using sample data instead...")
         return create_sample_data()
 
 
@@ -555,7 +571,7 @@ def display_stats(df):
     """.format(total_emails, ai_replies, with_attachments, drafts_count), unsafe_allow_html=True)
 
 
-def display_email_card(email_data, index):
+def display_email_card(email_data, index, credentials_dict=None):
     """Render one email entry as a colorful card with action buttons."""
     sender_name = email_data.get("sender name", "Unknown Sender")
     sender_email = email_data.get("sender email", "")
@@ -635,14 +651,14 @@ def display_email_card(email_data, index):
     with col4:
         if st.button("📋 Save as Draft", key=f"draft_{index}", use_container_width=True):
             draft_body = ai_reply if has_ai_reply else ""
-            save_draft(dict(email_data), draft_body)
-            st.success("✅ Saved to drafts!")
+            save_draft(dict(email_data), draft_body, credentials_dict)
+            st.success("✅ Saved to drafts and Google Sheets!")
     
     st.markdown("---")
 
 
-def save_draft(email_data, body):
-    """Save email draft to session state."""
+def save_draft(email_data, body, credentials_dict=None):
+    """Save email draft to session state and Google Sheets column G (AIreply)."""
     if 'drafts' not in st.session_state:
         st.session_state['drafts'] = []
     
@@ -653,6 +669,37 @@ def save_draft(email_data, body):
         'subject': f"Re: {email_data.get('subject', '')}"
     }
     st.session_state['drafts'].append(draft)
+    
+    # Write to Google Sheets if credentials available
+    if credentials_dict:
+        try:
+            scope = [
+                "https://spreadsheets.google.com/feeds",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
+            gc = gspread.authorize(credentials)
+            sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
+            worksheet = gc.open_by_key(sheet_id).sheet1
+            
+            # Find the row with matching subject and sender email
+            all_data = worksheet.get_all_values()
+            headers = all_data[0]
+            
+            # Find AIreply column (column G)
+            aireply_col_idx = headers.index('AIreply') + 1 if 'AIreply' in headers else 7
+            
+            # Search for matching row
+            for row_idx, row in enumerate(all_data[1:], start=2):  # Start from row 2 (skip headers)
+                if (len(row) > 2 and 
+                    row[2] == email_data.get('subject', '') and 
+                    row[1] == email_data.get('sender email', '')):
+                    # Update AIreply column with draft body
+                    worksheet.update_cell(row_idx, aireply_col_idx, body)
+                    break
+                    
+        except Exception as e:
+            st.warning(f"Could not save to Google Sheets: {str(e)}")
 
 
 def render_email_composer(email_data=None, template_name=None):
@@ -799,7 +846,7 @@ def render_drafts():
 
 
 def main():
-    """Main application logic."""
+    """Main application function."""
     st.title("📧 Email Management Dashboard")
     st.markdown("**Manage your emails efficiently with AI-powered replies**")
     st.markdown("---")
@@ -813,12 +860,14 @@ def main():
         st.markdown("#### 🔐 Upload JSON Credentials")
         uploaded_file = st.file_uploader("Choose your credentials JSON file", type=['json'])
         
-        credentials_data = None
+        credentials_dict = None
         if uploaded_file is not None:
-            credentials_data = json.load(uploaded_file)
-            st.success("✅ Credentials loaded successfully!")
-        else:
-            st.info("📤 Please upload your Google Service Account JSON file")
+            try:
+                credentials_dict = json.load(uploaded_file)
+                st.success("✅ Credentials loaded successfully!")
+            except Exception as e:
+                st.error(f"Error reading JSON file: {str(e)}")
+                credentials_dict = None
         
         st.markdown("---")
         
@@ -856,8 +905,11 @@ def main():
         st.markdown("### 📊 Stats Overview")
     
     # Load data
-    # Pass sheet_url to load_data_from_gsheet if needed for dynamic sheet selection
-    df = load_data_from_gsheet(credentials_data, sheet_url) 
+    if credentials_dict:
+        df = load_data_from_gsheet(credentials_dict)
+    else:
+        st.warning("Please upload Google Sheets credentials in the sidebar.")
+        df = create_sample_data()
     
     if not df.empty:
         # Apply department filter
@@ -889,7 +941,7 @@ def main():
             st.info("📭 No emails to display for the selected department.")
         else:
             for index, row in df.iterrows():
-                display_email_card(row.to_dict(), index)
+                display_email_card(row.to_dict(), index, credentials_dict)
         
         if auto_refresh:
             time.sleep(refresh_interval)
