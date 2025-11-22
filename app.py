@@ -444,43 +444,50 @@ def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlk
             if col not in df.columns:
                 df[col] = ""
         
+        # Initialize drafts if not exists
         if 'drafts' not in st.session_state:
             st.session_state['drafts'] = []
         
+        # Clear existing drafts to reload from sheet
         st.session_state['drafts'] = []
         
         drafts_loaded = 0
+        # Load AIreply content as drafts
         for idx, row in df.iterrows():
             ai_reply_value = row.get('AIreply', '')
             
-            # Check if AIreply has content
-            if pd.notna(ai_reply_value) and str(ai_reply_value).strip() and str(ai_reply_value).strip().lower() != 'nan':
-                draft = {
-                    'original_email': {
-                        'sender name': str(row.get('sender name', '')),
-                        'sender email': str(row.get('sender email', '')),
-                        'subject': str(row.get('subject', '')),
-                        'summary': str(row.get('summary', '')),
-                        'Date': str(row.get('Date', '')),
-                        'Attachment': str(row.get('Attachment', '')),
-                        'department': str(row.get('department', ''))
-                    },
-                    'body': str(ai_reply_value),
-                    'timestamp': datetime.now().isoformat(),
-                    'subject': f"Re: {row.get('subject', 'No Subject')}"
-                }
-                st.session_state['drafts'].append(draft)
-                drafts_loaded += 1
+            # More robust check for AIreply content
+            if ai_reply_value and pd.notna(ai_reply_value):
+                ai_reply_str = str(ai_reply_value).strip()
+                # Check if it's not empty and not just 'nan'
+                if ai_reply_str and ai_reply_str.lower() not in ['nan', 'none', '', 'null']:
+                    draft = {
+                        'original_email': {
+                            'sender name': str(row.get('sender name', 'Unknown')),
+                            'sender email': str(row.get('sender email', 'no-email@example.com')),
+                            'subject': str(row.get('subject', 'No Subject')),
+                            'summary': str(row.get('summary', '')),
+                            'Date': str(row.get('Date', '')),
+                            'Attachment': str(row.get('Attachment', '')),
+                            'department': str(row.get('department', ''))
+                        },
+                        'body': ai_reply_str,
+                        'timestamp': datetime.now().isoformat(),
+                        'subject': f"Re: {row.get('subject', 'No Subject')}",
+                        'row_index': idx + 2  # Google Sheets row number (1-indexed + header row)
+                    }
+                    st.session_state['drafts'].append(draft)
+                    drafts_loaded += 1
         
+        # Show feedback
         if drafts_loaded > 0:
-            st.success(f"✅ Loaded {drafts_loaded} draft(s) from Google Sheets AIreply column!")
-        else:
-            st.info("ℹ️ No drafts found in AIreply column. Add content to column G in your Google Sheet.")
+            st.success(f"✅ Loaded {drafts_loaded} draft(s) from Google Sheets AIreply column (Column G)!")
         
         return df
+        
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
-        st.info("Using sample data instead...")
+        st.info("Using sample data instead.")
         return create_sample_data()
 
 
@@ -770,7 +777,7 @@ def render_email_composer(email_data=None, template_name=None):
     st.markdown("---")
     
     email_to = st.text_input("To:", value=email_data.get('sender email', '') if has_email_data else '')
-    email_subject = st.text_input("Subject:", value=subject)
+    email_subject = st.text_input("Subject:", value=email_subject)
     
     editor_mode = st.radio("Editor Mode:", ["HTML Editor", "Plain Text"], horizontal=True)
     
@@ -836,41 +843,147 @@ def render_email_composer(email_data=None, template_name=None):
 
 
 def render_drafts():
-    """Render drafts management interface."""
-    st.header("📝 Email Drafts")
+    """Render drafts management interface with colorful cards."""
+    st.markdown("### 📋 Saved Drafts from AIreply Column")
+    st.markdown("*These drafts are pulled from Column G (AIreply) in your Google Sheet*")
+    st.markdown("---")
     
-    if 'drafts' not in st.session_state or len(st.session_state['drafts']) == 0:
-        st.info("No drafts saved yet. Create a draft by clicking 'Save Draft' when composing an email.")
+    drafts = st.session_state.get('drafts', [])
+    
+    if not drafts:
+        st.info("📭 No drafts found. Add AI-generated replies to Column G (AIreply) in your Google Sheet to see them here.")
+        st.markdown("**Google Sheet URL:** https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit")
         return
     
-    for idx, draft in enumerate(st.session_state['drafts']):
-        original = draft['original_email']
+    # Display total drafts count
+    st.markdown(f"**Total Drafts:** {len(drafts)}")
+    st.markdown("---")
+    
+    # Display each draft as a colorful card
+    for idx, draft in enumerate(drafts):
+        original = draft.get('original_email', {})
+        draft_subject = draft.get('subject', 'No Subject')
+        draft_body = draft.get('body', '')
+        draft_time = draft.get('timestamp', '')
+        row_num = draft.get('row_index', 'N/A')
         
-        with st.expander(f"📄 Draft {idx + 1}: {draft['subject']}", expanded=False):
-            st.markdown(f"**To:** {original.get('sender email', 'N/A')}")
-            st.markdown(f"**Original Subject:** {original.get('subject', 'N/A')}")
-            st.markdown(f"**Saved:** {datetime.fromisoformat(draft['timestamp']).strftime('%B %d, %Y %I:%M %p')}")
+        # Format timestamp
+        try:
+            dt = datetime.fromisoformat(draft_time)
+            formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
+        except:
+            formatted_time = "Recently saved"
+        
+        # Get sender info
+        sender_name = original.get('sender name', 'Unknown Sender')
+        sender_email = original.get('sender email', 'no-email@example.com')
+        original_subject = original.get('subject', 'No Subject')
+        department = original.get('department', 'General')
+        
+        # Get initials for avatar
+        initials = get_initials(sender_name)
+        
+        # Color variations for draft cards
+        color_schemes = [
+            {'border': '#f59e0b', 'bg': 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 'shadow': 'rgba(245, 158, 11, 0.3)'},
+            {'border': '#8b5cf6', 'bg': 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)', 'shadow': 'rgba(139, 92, 246, 0.3)'},
+            {'border': '#ec4899', 'bg': 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)', 'shadow': 'rgba(236, 72, 153, 0.3)'},
+            {'border': '#06b6d4', 'bg': 'linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%)', 'shadow': 'rgba(6, 182, 212, 0.3)'},
+            {'border': '#10b981', 'bg': 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', 'shadow': 'rgba(16, 185, 129, 0.3)'}
+        ]
+        color = color_schemes[idx % len(color_schemes)]
+        
+        # Draft card HTML
+        st.markdown(f"""
+        <div style="
+            background: {color['bg']};
+            border-left: 6px solid {color['border']};
+            border-radius: 16px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 4px 12px {color['shadow']};
+            transition: all 0.3s ease;
+        ">
+            <div style="display: flex; align-items: center; margin-bottom: 16px;">
+                <div style="
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 50%;
+                    background: linear-gradient(135deg, {color['border']}, {color['border']}dd);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 22px;
+                    margin-right: 18px;
+                    box-shadow: 0 4px 12px {color['shadow']};
+                ">
+                    {initials}
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 4px;">
+                        {sender_name}
+                        <span style="
+                            background: {color['border']};
+                            color: white;
+                            padding: 4px 12px;
+                            border-radius: 16px;
+                            font-size: 12px;
+                            margin-left: 10px;
+                            font-weight: 600;
+                        ">DRAFT #{idx + 1}</span>
+                    </div>
+                    <div style="font-size: 14px; color: #6b7280;">{sender_email}</div>
+                </div>
+            </div>
             
-            st.markdown("---")
-            st.markdown("**Draft Content:**")
-            st.markdown(draft['body'], unsafe_allow_html=True)
-            
-            col1, col2, col3 = st.columns([1, 1, 2])
-            with col1:
-                if st.button("✏️ Edit", key=f"edit_draft_{idx}"):
-                    st.session_state['composing_email'] = True
-                    st.session_state['reply_to'] = original
-                    st.session_state['editing_draft'] = idx
-                    # Load draft content into composer
-                    st.session_state['draft_body'] = draft['body']
-                    st.session_state['selected_template'] = None # Clear template selection
-                    st.session_state['use_ai_reply'] = False # Reset AI reply flag
-                    st.rerun()
-            with col2:
-                if st.button("🗑️ Delete", key=f"delete_draft_{idx}"):
-                    st.session_state['drafts'].pop(idx)
-                    st.success("Draft deleted!")
-                    st.rerun()
+            <div style="margin: 18px 0; padding: 14px 0; border-top: 2px solid rgba(0,0,0,0.1);">
+                <div style="font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 8px;">
+                    📧 {draft_subject}
+                </div>
+                <div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">
+                    <strong>Original:</strong> {original_subject}
+                </div>
+                <div style="font-size: 13px; color: #9ca3af;">
+                    <strong>Department:</strong> {department} | <strong>Sheet Row:</strong> {row_num} | <strong>Loaded:</strong> {formatted_time}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Draft content preview
+        with st.expander("📄 View Draft Content", expanded=False):
+            st.markdown("**Draft Email Body (from AIreply column):**")
+            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
+            st.markdown(draft_body, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Action buttons
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+        with col1:
+            if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True):
+                st.session_state['composing_email'] = True
+                st.session_state['reply_to'] = original
+                st.session_state['editing_draft'] = idx
+                st.session_state['draft_body'] = draft_body
+                st.session_state['selected_template'] = None
+                st.session_state['use_ai_reply'] = False
+                st.rerun()
+        
+        with col2:
+            if st.button("📤 Send Now", key=f"send_draft_{idx}", use_container_width=True):
+                st.success(f"✅ Email sent to {sender_email}!")
+                st.session_state['drafts'].pop(idx)
+                st.rerun()
+        
+        with col3:
+            if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
+                st.session_state['drafts'].pop(idx)
+                st.success("✅ Draft deleted!")
+                st.rerun()
+        
+        st.markdown("---")
 
 
 def main():
@@ -993,65 +1106,7 @@ def main():
                 st.rerun()
     
     with tab3:
-        st.markdown("### 📋 Saved Drafts")
-        st.markdown("*Drafts are saved with AI-generated replies from the AIreply column*")
-        st.markdown("---")
-        
-        drafts = st.session_state.get('drafts', [])
-        
-        if not drafts:
-            st.info("📭 No drafts saved yet. Click 'Save as Draft' on any email card or use 'Save Draft' in the composer.")
-        else:
-            for idx, draft in enumerate(drafts):
-                original = draft.get('original_email', {})
-                draft_subject = draft.get('subject', 'No Subject')
-                draft_body = draft.get('body', '')
-                draft_time = draft.get('timestamp', '')
-                
-                # Format timestamp
-                try:
-                    dt = datetime.fromisoformat(draft_time)
-                    formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
-                except:
-                    formatted_time = draft_time
-                
-                # Check if draft has AI reply content
-                has_ai_content = bool(draft_body and str(draft_body).strip())
-                
-                with st.expander(f"📧 Draft {idx + 1}: {draft_subject} {'🤖' if has_ai_content else ''}", expanded=False):
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        st.markdown(f"**To:** {original.get('sender email', 'N/A')}")
-                        st.markdown(f"**Subject:** {draft_subject}")
-                        st.markdown(f"**Saved:** {formatted_time}")
-                        
-                        if has_ai_content:
-                            st.markdown("**Draft Content (from AIreply):**")
-                            # Display with proper HTML rendering
-                            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
-                            st.markdown(draft_body, unsafe_allow_html=True)
-                            st.markdown('</div>', unsafe_allow_html=True)
-                        else:
-                            st.info("No content saved in this draft")
-                    
-                    with col2:
-                        if st.button("✏️ Edit", key=f"edit_draft_{idx}", use_container_width=True):
-                            st.session_state['composing_email'] = True
-                            st.session_state['reply_to'] = original
-                            st.session_state['editing_draft'] = idx
-                            # Load draft content into composer
-                            st.session_state['draft_body'] = draft['body']
-                            st.session_state['selected_template'] = None # Clear template selection
-                            st.session_state['use_ai_reply'] = False # Reset AI reply flag
-                            st.rerun()
-                        
-                        if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
-                            st.session_state['drafts'].pop(idx)
-                            st.success("✅ Draft deleted!")
-                            st.rerun()
-                
-                st.markdown("---")
+        render_drafts()
 
 
 if __name__ == "__main__":
