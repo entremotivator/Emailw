@@ -3,8 +3,8 @@ import pandas as pd
 import json
 from datetime import datetime
 import os
-import base64
-from email.mime.text import MIMEText
+# import base64 # Not needed as Gmail API functions are removed
+# from email.mime.text import MIMEText # Not needed as Gmail API functions are removed
 from openai import OpenAI
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
@@ -168,130 +168,8 @@ def batch_generate_drafts_and_tags(emails_df):
     progress_bar.empty()
     return results
 
-# ==================== GMAIL UTILS ====================
-def get_gmail_service():
-    if 'gmail_credentials' not in st.session_state:
-        raise Exception('Gmail credentials not configured. Please authenticate first.')
-    
-    credentials = st.session_state.gmail_credentials
-    service = build('gmail', 'v1', credentials=credentials)
-    return service
-
-def fetch_emails(max_results=50):
-    try:
-        service = get_gmail_service()
-        
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=max_results,
-            # labelIds=['INBOX'] # Removed to fix "Precondition check failed" error
-        ).execute()
-        
-        messages = results.get('messages', [])
-        
-        emails = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for idx, msg in enumerate(messages):
-            status_text.text(f"Fetching email {idx + 1} of {len(messages)}...")
-            
-            message = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='full'
-            ).execute()
-            
-            email_data = parse_email(message)
-            emails.append(email_data)
-            
-            progress_bar.progress((idx + 1) / len(messages))
-        
-        status_text.empty()
-        progress_bar.empty()
-        
-        return emails
-    except Exception as e:
-        st.error(f"Error fetching emails: {e}")
-        return []
-
-def parse_email(message):
-    headers = message['payload']['headers']
-    
-    subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
-    sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown Sender')
-    date = next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
-    
-    sender_email = sender
-    sender_name = sender
-    if '<' in sender and '>' in sender:
-        sender_name = sender.split('<')[0].strip()
-        sender_email = sender.split('<')[1].split('>')[0].strip()
-    
-    body = get_email_body(message['payload'])
-    
-    has_attachments = 'No'
-    if 'parts' in message['payload']:
-        for part in message['payload']['parts']:
-            if part.get('filename'):
-                has_attachments = 'Yes'
-                break
-    
-    try:
-        date_obj = datetime.strptime(date.split('(')[0].strip(), '%a, %d %b %Y %H:%M:%S %z')
-        formatted_date = date_obj.strftime('%m/%d/%Y, %I:%M %p')
-    except:
-        formatted_date = date
-    
-    return {
-        'message_id': message['id'],
-        'thread_id': message['threadId'],
-        'sender name': sender_name,
-        'sender email': sender_email,
-        'subject': subject,
-        'summary': body[:500] if body else 'No content',
-        'Date': formatted_date,
-        'Attachment': has_attachments,
-        'generated_email_draft': '',
-        'email_tag': ''
-    }
-
-def get_email_body(payload):
-    if 'parts' in payload:
-        for part in payload['parts']:
-            if part['mimeType'] == 'text/plain':
-                if 'data' in part['body']:
-                    return base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
-            elif part['mimeType'] == 'multipart/alternative':
-                return get_email_body(part)
-    
-    if 'body' in payload and 'data' in payload['body']:
-        return base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8')
-    
-    return ''
-
-def send_email(to_email, subject, body, reply_to_message_id=None):
-    try:
-        service = get_gmail_service()
-        
-        message = MIMEText(body)
-        message['to'] = to_email
-        message['subject'] = subject
-        
-        if reply_to_message_id:
-            message['In-Reply-To'] = reply_to_message_id
-            message['References'] = reply_to_message_id
-        
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
-        
-        send_message = service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message}
-        ).execute()
-        
-        return True, f"Email sent successfully! Message ID: {send_message['id']}"
-    except Exception as e:
-        return False, f"Error sending email: {str(e)}"
+# ==================== GMAIL UTILS (REMOVED) ====================
+# All Gmail API functions have been removed as per user request to only fetch data from Google Sheets.
 
 # ==================== SHEETS UTILS ====================
 def get_sheets_service():
