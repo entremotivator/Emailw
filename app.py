@@ -605,9 +605,6 @@ def display_email_card(email_data, index, credentials_dict=None):
         formatted_date = str(date)
 
     has_attachment = str(attachment).lower() in ["yes", "true", "1"]
-    attachment_class = "attachment" if has_attachment else "no-attachment"
-    attachment_text = "📎 Has Attachment" if has_attachment else "No Attachment"
-    
     has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
     
     ai_reply_badge = ""
@@ -722,8 +719,7 @@ def save_draft(email_data, body, credentials_dict=None):
 
 def render_email_composer(email_data=None, template_name=None):
     """Render email composition interface with HTML and Plain Text modes."""
-    st.markdown('<div class="editor-container">', unsafe_allow_html=True)
-    st.markdown('<div class="editor-header">✍️ Compose Reply</div>', unsafe_allow_html=True)
+    st.subheader("✍️ Compose Reply")
     
     has_email_data = email_data is not None and (isinstance(email_data, dict) or hasattr(email_data, 'get'))
     
@@ -747,7 +743,7 @@ def render_email_composer(email_data=None, template_name=None):
             if st.button(f"📄 {template_name_btn.split()[0]}", key=f"template_{idx}", use_container_width=True):
                 st.session_state['selected_template'] = template_name_btn
                 st.session_state['use_ai_reply'] = False
-                st.session_state['draft_body'] = '' # Clear draft body when selecting new template
+                st.session_state['draft_body'] = ''
                 st.rerun()
     
     selected_template = st.session_state.get('selected_template', template_name)
@@ -755,7 +751,7 @@ def render_email_composer(email_data=None, template_name=None):
     if draft_body:
         subject = f"Re: {email_data.get('subject', '')}" if has_email_data else "Draft Email"
         body = draft_body
-        st.session_state['draft_body'] = ''  # Clear after loading
+        st.session_state['draft_body'] = ''
     elif use_ai_reply and ai_reply_content:
         subject = f"Re: {email_data.get('subject', '')}"
         body = ai_reply_content
@@ -777,7 +773,7 @@ def render_email_composer(email_data=None, template_name=None):
     st.markdown("---")
     
     email_to = st.text_input("To:", value=email_data.get('sender email', '') if has_email_data else '')
-    email_subject = st.text_input("Subject:", value=email_subject)
+    email_subject = st.text_input("Subject:", value=subject)
     
     editor_mode = st.radio("Editor Mode:", ["HTML Editor", "Plain Text"], horizontal=True)
     
@@ -786,13 +782,10 @@ def render_email_composer(email_data=None, template_name=None):
         email_body = st.text_area("Email Body", value=body, height=400, key="html_editor", label_visibility="collapsed")
         
         with st.expander("👁️ Preview HTML", expanded=False):
-            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
             st.markdown(email_body, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.markdown("**Plain Text Message:**")
         
-        # Convert HTML to plain text if switching from HTML mode
         plain_body = re.sub('<[^<]+?>', '', body) if body else ""
         plain_body = plain_body.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
         
@@ -802,7 +795,7 @@ def render_email_composer(email_data=None, template_name=None):
         
         if email_body:
             with st.expander("👁️ Preview Plain Text", expanded=False):
-                st.markdown(f'<div class="plain-text-display">{email_body}</div>', unsafe_allow_html=True)
+                st.text(email_body)
     
     col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
     
@@ -839,14 +832,108 @@ def render_email_composer(email_data=None, template_name=None):
                 del st.session_state['draft_body']
             st.rerun()
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    with col4:
+        st.markdown("**Total Characters:** " + str(len(email_body)) if email_body else "0")
+
+
+def display_email_card(email_data, index, credentials_dict=None):
+    """Render one email entry as a colorful card using only Streamlit components."""
+    sender_name = email_data.get("sender name", "Unknown Sender")
+    sender_email = email_data.get("sender email", "")
+    subject = email_data.get("subject", "No Subject")
+    summary = email_data.get("summary", "No summary available")
+    date = email_data.get("Date", "")
+    attachment = email_data.get("Attachment", "No")
+    ai_reply = email_data.get("AIreply", "")
+    department = email_data.get("department", "General")
+    
+    initials = get_initials(sender_name)
+
+    try:
+        formatted_date = datetime.strptime(str(date), "%Y-%m-%d").strftime("%B %d, %Y")
+    except:
+        formatted_date = str(date)
+
+    has_attachment = str(attachment).lower() in ["yes", "true", "1"]
+    has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
+    
+    # Create card using Streamlit container
+    with st.container():
+        # Header row with avatar and sender info
+        col_avatar, col_info = st.columns([1, 6])
+        
+        with col_avatar:
+            st.markdown(f"### {initials}")
+        
+        with col_info:
+            st.markdown(f"**{sender_name}**")
+            st.caption(f"{sender_email}")
+            if has_ai_reply:
+                st.success("🤖 AI Reply Ready", icon="✅")
+        
+        # Subject and summary
+        st.subheader(f"📧 {subject}")
+        st.write(summary)
+        
+        # AI Reply Preview
+        if has_ai_reply:
+            with st.expander("🤖 View AI-Generated Reply"):
+                preview_text = re.sub('<[^<]+?>', '', str(ai_reply))
+                preview_text = preview_text[:500] + "..." if len(preview_text) > 500 else preview_text
+                st.info(preview_text)
+        
+        # Metadata row
+        col_date, col_dept, col_attach = st.columns(3)
+        with col_date:
+            st.caption(f"📅 {formatted_date}")
+        with col_dept:
+            st.caption(f"🏢 {department}")
+        with col_attach:
+            if has_attachment:
+                st.caption("📎 Has Attachment")
+            else:
+                st.caption("No Attachment")
+        
+        # Action buttons
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            if st.button("✉️ Reply", key=f"reply_{index}", use_container_width=True):
+                st.session_state['composing_email'] = True
+                st.session_state['reply_to'] = dict(email_data)
+                st.session_state['selected_template'] = None
+                st.session_state['use_ai_reply'] = False
+                st.session_state['draft_body'] = ''
+                st.rerun()
+        with col2:
+            ai_button_label = "🤖 Use AI Reply" if has_ai_reply else "🤖 No AI Reply"
+            if st.button(ai_button_label, key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True):
+                st.session_state['composing_email'] = True
+                st.session_state['reply_to'] = dict(email_data)
+                st.session_state['selected_template'] = None
+                st.session_state['use_ai_reply'] = True
+                st.session_state['draft_body'] = ''
+                st.rerun()
+        with col3:
+            if st.button("⚡ Quick Reply", key=f"quick_{index}", use_container_width=True):
+                st.session_state['composing_email'] = True
+                st.session_state['reply_to'] = dict(email_data)
+                st.session_state['selected_template'] = "Quick Acknowledgment"
+                st.session_state['use_ai_reply'] = False
+                st.session_state['draft_body'] = ''
+                st.rerun()
+        with col4:
+            if st.button("💾 Save Draft", key=f"save_draft_{index}", use_container_width=True):
+                save_draft(email_data, "")
+                st.success("Draft saved!")
+        
+        st.divider()
 
 
 def render_drafts():
-    """Render drafts management interface with colorful cards."""
-    st.markdown("### 📋 Saved Drafts from AIreply Column")
-    st.markdown("*These drafts are pulled from Column G (AIreply) in your Google Sheet*")
-    st.markdown("---")
+    """Render drafts management interface using only Streamlit native components."""
+    st.subheader("📋 Saved Drafts from AIreply Column")
+    st.caption("*These drafts are pulled from Column G (AIreply) in your Google Sheet*")
+    st.divider()
     
     drafts = st.session_state.get('drafts', [])
     
@@ -855,11 +942,10 @@ def render_drafts():
         st.markdown("**Google Sheet URL:** https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit")
         return
     
-    # Display total drafts count
-    st.markdown(f"**Total Drafts:** {len(drafts)}")
-    st.markdown("---")
+    st.metric("Total Drafts", len(drafts))
+    st.divider()
     
-    # Display each draft as a colorful card
+    # Display each draft as a native Streamlit card
     for idx, draft in enumerate(drafts):
         original = draft.get('original_email', {})
         draft_subject = draft.get('subject', 'No Subject')
@@ -872,7 +958,7 @@ def render_drafts():
             dt = datetime.fromisoformat(draft_time)
             formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
         except:
-            formatted_time = "Recently saved"
+            formatted_time = "Recently loaded"
         
         # Get sender info
         sender_name = original.get('sender name', 'Unknown Sender')
@@ -883,107 +969,69 @@ def render_drafts():
         # Get initials for avatar
         initials = get_initials(sender_name)
         
-        # Color variations for draft cards
-        color_schemes = [
-            {'border': '#f59e0b', 'bg': 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', 'shadow': 'rgba(245, 158, 11, 0.3)'},
-            {'border': '#8b5cf6', 'bg': 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)', 'shadow': 'rgba(139, 92, 246, 0.3)'},
-            {'border': '#ec4899', 'bg': 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)', 'shadow': 'rgba(236, 72, 153, 0.3)'},
-            {'border': '#06b6d4', 'bg': 'linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%)', 'shadow': 'rgba(6, 182, 212, 0.3)'},
-            {'border': '#10b981', 'bg': 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)', 'shadow': 'rgba(16, 185, 129, 0.3)'}
-        ]
-        color = color_schemes[idx % len(color_schemes)]
-        
-        # Draft card HTML
-        st.markdown(f"""
-        <div style="
-            background: {color['bg']};
-            border-left: 6px solid {color['border']};
-            border-radius: 16px;
-            padding: 24px;
-            margin: 20px 0;
-            box-shadow: 0 4px 12px {color['shadow']};
-            transition: all 0.3s ease;
-        ">
-            <div style="display: flex; align-items: center; margin-bottom: 16px;">
-                <div style="
-                    width: 56px;
-                    height: 56px;
-                    border-radius: 50%;
-                    background: linear-gradient(135deg, {color['border']}, {color['border']}dd);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 22px;
-                    margin-right: 18px;
-                    box-shadow: 0 4px 12px {color['shadow']};
-                ">
-                    {initials}
-                </div>
-                <div style="flex: 1;">
-                    <div style="font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 4px;">
-                        {sender_name}
-                        <span style="
-                            background: {color['border']};
-                            color: white;
-                            padding: 4px 12px;
-                            border-radius: 16px;
-                            font-size: 12px;
-                            margin-left: 10px;
-                            font-weight: 600;
-                        ">DRAFT #{idx + 1}</span>
-                    </div>
-                    <div style="font-size: 14px; color: #6b7280;">{sender_email}</div>
-                </div>
-            </div>
+        # Create draft card using Streamlit container
+        with st.container():
+            # Draft badge
+            st.success(f"DRAFT #{idx + 1} - From Row {row_num}", icon="📝")
             
-            <div style="margin: 18px 0; padding: 14px 0; border-top: 2px solid rgba(0,0,0,0.1);">
-                <div style="font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 8px;">
-                    📧 {draft_subject}
-                </div>
-                <div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">
-                    <strong>Original:</strong> {original_subject}
-                </div>
-                <div style="font-size: 13px; color: #9ca3af;">
-                    <strong>Department:</strong> {department} | <strong>Sheet Row:</strong> {row_num} | <strong>Loaded:</strong> {formatted_time}
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Draft content preview
-        with st.expander("📄 View Draft Content", expanded=False):
-            st.markdown("**Draft Email Body (from AIreply column):**")
-            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
-            st.markdown(draft_body, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Action buttons
-        col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
-        with col1:
-            if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True):
-                st.session_state['composing_email'] = True
-                st.session_state['reply_to'] = original
-                st.session_state['editing_draft'] = idx
-                st.session_state['draft_body'] = draft_body
-                st.session_state['selected_template'] = None
-                st.session_state['use_ai_reply'] = False
-                st.rerun()
-        
-        with col2:
-            if st.button("📤 Send Now", key=f"send_draft_{idx}", use_container_width=True):
-                st.success(f"✅ Email sent to {sender_email}!")
-                st.session_state['drafts'].pop(idx)
-                st.rerun()
-        
-        with col3:
-            if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
-                st.session_state['drafts'].pop(idx)
-                st.success("✅ Draft deleted!")
-                st.rerun()
-        
-        st.markdown("---")
+            # Header row with avatar and sender info
+            col_avatar, col_info = st.columns([1, 6])
+            
+            with col_avatar:
+                st.markdown(f"### {initials}")
+            
+            with col_info:
+                st.markdown(f"**{sender_name}**")
+                st.caption(f"{sender_email}")
+                st.caption(f"🏢 {department}")
+            
+            # Subject information
+            st.subheader(f"📧 {draft_subject}")
+            st.caption(f"**Original Subject:** {original_subject}")
+            st.caption(f"**Loaded:** {formatted_time}")
+            
+            # Draft content preview
+            with st.expander("📄 View Draft Content from AIreply Column", expanded=False):
+                st.markdown("**Draft Email Body:**")
+                # Show HTML content rendered
+                st.markdown(draft_body, unsafe_allow_html=True)
+                
+                st.divider()
+                
+                # Also show plain text version
+                st.markdown("**Plain Text Version:**")
+                plain_text = re.sub('<[^<]+?>', '', draft_body)
+                st.text(plain_text[:1000] + "..." if len(plain_text) > 1000 else plain_text)
+            
+            # Action buttons
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
+            with col1:
+                if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True, type="primary"):
+                    st.session_state['composing_email'] = True
+                    st.session_state['reply_to'] = original
+                    st.session_state['editing_draft'] = idx
+                    st.session_state['draft_body'] = draft_body
+                    st.session_state['selected_template'] = None
+                    st.session_state['use_ai_reply'] = False
+                    st.rerun()
+            
+            with col2:
+                if st.button("📤 Send Now", key=f"send_draft_{idx}", use_container_width=True):
+                    st.success(f"✅ Email sent to {sender_email}!")
+                    st.balloons()
+                    st.session_state['drafts'].pop(idx)
+                    st.rerun()
+            
+            with col3:
+                if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
+                    st.session_state['drafts'].pop(idx)
+                    st.success("✅ Draft deleted!")
+                    st.rerun()
+            
+            with col4:
+                st.caption(f"📊 Draft length: {len(draft_body)} characters")
+            
+            st.divider()
 
 
 def main():
