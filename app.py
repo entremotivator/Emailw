@@ -12,6 +12,80 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+import pickle
+import os
+from pathlib import Path
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+import base64
+
+# ------------------------------
+# 🔐 PERSISTENT AUTHENTICATION
+# ------------------------------
+
+SCOPES_GMAIL = ['https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.readonly']
+SCOPES_SHEETS = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+def get_persistent_credentials():
+    """Get credentials from Streamlit secrets or session state."""
+    # Check if credentials exist in Streamlit secrets
+    if 'credentials' in st.secrets:
+        try:
+            credentials_dict = dict(st.secrets['credentials'])
+            return credentials_dict
+        except:
+            pass
+    
+    # Check session state for uploaded credentials
+    if 'stored_credentials' in st.session_state:
+        return st.session_state['stored_credentials']
+    
+    return None
+
+def initialize_gmail_service(credentials_dict):
+    """Initialize Gmail API service with service account credentials."""
+    try:
+        credentials = Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=SCOPES_GMAIL
+        )
+        service = build('gmail', 'v1', credentials=credentials)
+        return service, True, "Gmail API authenticated successfully!"
+    except Exception as e:
+        return None, False, f"Gmail API authentication failed: {str(e)}"
+
+def initialize_sheets_service(credentials_dict):
+    """Initialize Google Sheets service with service account credentials."""
+    try:
+        credentials = Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=SCOPES_SHEETS
+        )
+        gc = gspread.authorize(credentials)
+        return gc, True, "Google Sheets authenticated successfully!"
+    except Exception as e:
+        return None, False, f"Google Sheets authentication failed: {str(e)}"
+
+def send_email_via_gmail_api(gmail_service, to_email, subject, body_html, from_email):
+    """Send email using Gmail API."""
+    try:
+        message = MIMEMultipart('alternative')
+        message['To'] = to_email
+        message['From'] = from_email
+        message['Subject'] = subject
+        
+        html_part = MIMEText(body_html, 'html')
+        message.attach(html_part)
+        
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+        body = {'raw': raw_message}
+        
+        sent_message = gmail_service.users().messages().send(userId='me', body=body).execute()
+        return True, f"Email sent successfully! Message ID: {sent_message['id']}"
+    except Exception as e:
+        return False, f"Failed to send email via Gmail API: {str(e)}"
+
 
 # ------------------------------
 # 🔧 PAGE CONFIGURATION
@@ -427,12 +501,12 @@ def get_initials(name):
 def load_data_from_gsheet(credentials_dict):
     """Load data from Google Sheet using provided credentials."""
     try:
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
-        gc = gspread.authorize(credentials)
+        gc, success, message = initialize_sheets_service(credentials_dict)
+        
+        if not success:
+            st.error(message)
+            return generate_mock_data(num_emails=0)
+        
         worksheet = gc.open_by_key(SHEET_ID).sheet1
         
         data = worksheet.get_all_records()
@@ -546,32 +620,39 @@ Best regards"""
 # ------------------------------
 # 📤 EMAIL SENDING FUNCTION
 # ------------------------------
-def send_real_email(smtp_settings, to_email, subject, body_html, from_name="InboxKeep User"):
-    """Send a real email using SMTP settings."""
+def send_real_email(smtp_settings, gmail_service, to_email, subject, body_html, from_name="InboxKeep User"):
+    """Send a real email using Gmail API (preferred) or SMTP settings."""
+    
+    # Try Gmail API first if available
+    if gmail_service:
+        from_email = smtp_settings.get('user', 'me@example.com')
+        return send_email_via_gmail_api(gmail_service, to_email, subject, body_html, from_email)
+    
+    # Fallback to SMTP if Gmail API is not available
     try:
         smtp_server = smtp_settings.get('server', 'smtp.gmail.com')
         smtp_port = smtp_settings.get('port', 587)
         smtp_user = smtp_settings.get('user', '')
         smtp_password = smtp_settings.get('password', '')
         
-        # Create message
+        if not smtp_user or not smtp_password:
+            return False, "SMTP credentials not configured"
+        
         msg = MIMEMultipart('alternative')
         msg['From'] = f"{from_name} <{smtp_user}>"
         msg['To'] = to_email
         msg['Subject'] = subject
         
-        # Attach HTML body
         html_part = MIMEText(body_html, 'html')
         msg.attach(html_part)
         
-        # Connect and send
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
         server.login(smtp_user, smtp_password)
         server.send_message(msg)
         server.quit()
         
-        return True, "Email sent successfully!"
+        return True, "Email sent successfully via SMTP!"
         
     except Exception as e:
         return False, f"Failed to send email: {str(e)}"
@@ -743,7 +824,7 @@ def render_template_selector(email_data):
     
     return None
 
-def render_compose(email_data=None):
+def render_compose(email_data=None, gmail_service=None):
     """Renders the compose page with templates and email canvas."""
     st.markdown("## ✉️ Compose Email")
     
@@ -755,6 +836,13 @@ def render_compose(email_data=None):
             'user': '',
             'password': ''
         }
+    
+    if gmail_service:
+        st.success("🔐 Gmail API Connected - Emails will be sent via Gmail API")
+    elif st.session_state['smtp_settings']['user'] and st.session_state['smtp_settings']['password']:
+        st.info("📧 SMTP Configured - Emails will be sent via SMTP")
+    else:
+        st.warning("⚠️ No email service configured. Configure Gmail API or SMTP below.")
     
     if email_data:
         st.info(f"**Replying to:** {email_data.get('sender name', 'Unknown')} ({email_data.get('sender email', '')})")
@@ -780,26 +868,27 @@ def render_compose(email_data=None):
         initial_body = ""
         use_template_mode = st.session_state.get('use_template', False)
     
-    # SMTP Configuration Expander
-    with st.expander("⚙️ SMTP Email Settings (Configure to send real emails)", expanded=False):
-        st.markdown("Configure your SMTP settings to send real emails. For Gmail, use an App Password.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            smtp_server = st.text_input("SMTP Server:", value=st.session_state['smtp_settings']['server'])
-            smtp_user = st.text_input("Email Address:", value=st.session_state['smtp_settings']['user'])
-        with col2:
-            smtp_port = st.number_input("SMTP Port:", value=st.session_state['smtp_settings']['port'], min_value=1, max_value=65535)
-            smtp_password = st.text_input("Password:", value=st.session_state['smtp_settings']['password'], type="password")
-        
-        if st.button("💾 Save SMTP Settings"):
-            st.session_state['smtp_settings'] = {
-                'server': smtp_server,
-                'port': smtp_port,
-                'user': smtp_user,
-                'password': smtp_password
-            }
-            st.success("SMTP settings saved!")
+    # SMTP Configuration Expander (only shown if Gmail API is not available)
+    if not gmail_service:
+        with st.expander("⚙️ SMTP Email Settings (Alternative to Gmail API)", expanded=False):
+            st.markdown("Configure your SMTP settings to send real emails. For Gmail, use an App Password.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                smtp_server = st.text_input("SMTP Server:", value=st.session_state['smtp_settings']['server'])
+                smtp_user = st.text_input("Email Address:", value=st.session_state['smtp_settings']['user'])
+            with col2:
+                smtp_port = st.number_input("SMTP Port:", value=st.session_state['smtp_settings']['port'], min_value=1, max_value=65535)
+                smtp_password = st.text_input("Password:", value=st.session_state['smtp_settings']['password'], type="password")
+            
+            if st.button("💾 Save SMTP Settings"):
+                st.session_state['smtp_settings'] = {
+                    'server': smtp_server,
+                    'port': smtp_port,
+                    'user': smtp_user,
+                    'password': smtp_password
+                }
+                st.success("SMTP settings saved!")
     
     # Template Mode
     if use_template_mode:
@@ -813,29 +902,25 @@ def render_compose(email_data=None):
             with col1:
                 if st.button("📤 Send Email", use_container_width=True, type="primary"):
                     if to_address and subject and template_body:
-                        # Check if SMTP is configured
-                        if st.session_state['smtp_settings']['user'] and st.session_state['smtp_settings']['password']:
-                            success, message = send_real_email(
-                                st.session_state['smtp_settings'],
-                                to_address,
-                                subject,
-                                template_body.replace('\n', '<br>')
-                            )
-                            
-                            if success:
-                                st.success(f"✅ {message}")
-                                st.balloons()
-                                time.sleep(2)
-                                st.session_state['mode'] = 'inbox'
-                                st.session_state['selected_email'] = None
-                                st.session_state['use_template'] = False
-                                st.session_state['selected_template'] = None
-                                st.rerun()
-                            else:
-                                st.error(message)
+                        success, message = send_real_email(
+                            st.session_state['smtp_settings'],
+                            gmail_service,
+                            to_address,
+                            subject,
+                            template_body.replace('\n', '<br>')
+                        )
+                        
+                        if success:
+                            st.success(f"✅ {message}")
+                            st.balloons()
+                            time.sleep(2)
+                            st.session_state['mode'] = 'inbox'
+                            st.session_state['selected_email'] = None
+                            st.session_state['use_template'] = False
+                            st.session_state['selected_template'] = None
+                            st.rerun()
                         else:
-                            st.warning("⚠️ SMTP not configured. Configure SMTP settings above to send real emails.")
-                            st.info(f"📧 Email would be sent to: {to_address}")
+                            st.error(message)
                     else:
                         st.error("Please fill in all fields before sending.")
             
@@ -891,28 +976,24 @@ def render_compose(email_data=None):
             
             if send_button:
                 if to_address and subject and body:
-                    # Check if SMTP is configured
-                    if st.session_state['smtp_settings']['user'] and st.session_state['smtp_settings']['password']:
-                        success, message = send_real_email(
-                            st.session_state['smtp_settings'],
-                            to_address,
-                            subject,
-                            body.replace('\n', '<br>')
-                        )
-                        
-                        if success:
-                            st.success(f"✅ {message}")
-                            st.balloons()
-                            time.sleep(2)
-                            st.session_state['mode'] = 'inbox'
-                            st.session_state['selected_email'] = None
-                            st.session_state['use_ai_reply'] = False
-                            st.rerun()
-                        else:
-                            st.error(message)
+                    success, message = send_real_email(
+                        st.session_state['smtp_settings'],
+                        gmail_service,
+                        to_address,
+                        subject,
+                        body.replace('\n', '<br>')
+                    )
+                    
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.balloons()
+                        time.sleep(2)
+                        st.session_state['mode'] = 'inbox'
+                        st.session_state['selected_email'] = None
+                        st.session_state['use_ai_reply'] = False
+                        st.rerun()
                     else:
-                        st.warning("⚠️ SMTP not configured. Email saved as draft instead.")
-                        st.info(f"📧 Configure SMTP settings to send to: {to_address}")
+                        st.error(message)
                 else:
                     st.error("Please fill in all fields before sending.")
             
@@ -993,7 +1074,7 @@ def render_drafts():
         st.session_state['mode'] = 'inbox'
         st.rerun()
 
-def render_edit_draft():
+def render_edit_draft(gmail_service=None):
     """Render the draft editing interface."""
     st.markdown("## ✏️ Edit Draft")
     
@@ -1028,25 +1109,23 @@ def render_edit_draft():
         
         if send_button:
             if to_address and subject and body:
-                if st.session_state['smtp_settings']['user'] and st.session_state['smtp_settings']['password']:
-                    success, message = send_real_email(
-                        st.session_state['smtp_settings'],
-                        to_address,
-                        subject,
-                        body.replace('\n', '<br>')
-                    )
-                    
-                    if success:
-                        st.success(f"✅ {message}")
-                        st.balloons()
-                        st.session_state['drafts'].pop(draft_idx)
-                        time.sleep(2)
-                        st.session_state['mode'] = 'inbox'
-                        st.rerun()
-                    else:
-                        st.error(message)
+                success, message = send_real_email(
+                    st.session_state['smtp_settings'],
+                    gmail_service,
+                    to_address,
+                    subject,
+                    body.replace('\n', '<br>')
+                )
+                
+                if success:
+                    st.success(f"✅ {message}")
+                    st.balloons()
+                    st.session_state['drafts'].pop(draft_idx)
+                    time.sleep(2)
+                    st.session_state['mode'] = 'inbox'
+                    st.rerun()
                 else:
-                    st.warning("⚠️ SMTP not configured.")
+                    st.error(message)
             else:
                 st.error("Please fill in all fields.")
         
@@ -1094,12 +1173,14 @@ def main():
         st.session_state['use_ai_reply'] = False
     if 'use_template' not in st.session_state:
         st.session_state['use_template'] = False
-    
-    credentials_dict = None
 
     st.title("📧 InboxKeep Pro: Full Email Suite")
     st.markdown("Complete email management with **real email sending**, **templates**, **AI replies**, and **visual email canvas**.")
     st.markdown("---")
+    
+    credentials_dict = get_persistent_credentials()
+    gmail_service = None
+    sheets_service = None
     
     with st.sidebar:
         st.markdown("### ⚙️ Navigation & Configuration")
@@ -1124,23 +1205,47 @@ def main():
 
         st.markdown("---")
         
-        st.markdown("#### 🔐 Google Sheets Credentials")
-        uploaded_file = st.file_uploader("Upload JSON credentials", type=['json'])
+        st.markdown("#### 🔐 Google Service Account Credentials")
+        st.markdown("Upload your service account JSON file once to stay logged in.")
+        
+        uploaded_file = st.file_uploader("Upload JSON credentials", type=['json'], key='creds_uploader')
         
         if uploaded_file is not None:
             try:
                 credentials_dict = json.load(uploaded_file)
-                st.success("✅ Credentials loaded!")
+                st.session_state['stored_credentials'] = credentials_dict
+                st.success("✅ Credentials loaded and stored in session!")
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Error loading credentials: {str(e)}")
                 credentials_dict = None
+        
+        # Show authentication status
+        if credentials_dict:
+            st.markdown("#### ✅ Authentication Status")
+            
+            # Test Gmail API connection
+            gmail_service, gmail_success, gmail_message = initialize_gmail_service(credentials_dict)
+            if gmail_success:
+                st.success(f"✅ Gmail API: Connected")
+            else:
+                st.warning(f"⚠️ Gmail API: {gmail_message}")
+            
+            # Test Google Sheets connection
+            sheets_service, sheets_success, sheets_message = initialize_sheets_service(credentials_dict)
+            if sheets_success:
+                st.success(f"✅ Google Sheets: Connected")
+            else:
+                st.warning(f"⚠️ Google Sheets: {sheets_message}")
+        else:
+            st.info("Upload credentials to enable Gmail API and Google Sheets integration.")
         
         st.markdown("---")
         
-        if credentials_dict:
+        if credentials_dict and sheets_service:
             df = load_data_from_gsheet(credentials_dict)
         else:
-            st.warning("Using mock data. Upload credentials for real data.")
+            if not credentials_dict:
+                st.info("📋 Using sample data. Upload credentials to connect to Google Sheets.")
             df = generate_mock_data(num_emails=25)
             
         st.session_state['df'] = df
@@ -1189,11 +1294,11 @@ def main():
     if st.session_state['mode'] == 'inbox':
         render_inbox(st.session_state.get('df_view', st.session_state['df']), credentials_dict)
     elif st.session_state['mode'] == 'compose':
-        render_compose(st.session_state.get('selected_email'))
+        render_compose(st.session_state.get('selected_email'), gmail_service)
     elif st.session_state['mode'] == 'drafts':
         render_drafts()
     elif st.session_state['mode'] == 'edit_draft':
-        render_edit_draft()
+        render_edit_draft(gmail_service)
     elif st.session_state['mode'] == 'template_draft':
         draft_idx = st.session_state.get('editing_draft_index', 0)
         draft = st.session_state['drafts'][draft_idx]
