@@ -461,7 +461,6 @@ def generate_mock_data(num_emails=25):
 def display_stats(df):
     """Display email statistics in colorful cards."""
     total_emails = len(df)
-    ai_replies = df['aireply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"])).sum()
     with_attachments = df[df['attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0]
     high_priority = df[df['priority'] == 'high'].shape[0]
     
@@ -472,16 +471,12 @@ def display_stats(df):
             <div class="stat-label">📧 Total Emails</div>
         </div>
         <div class="stat-card teal">
-            <div class="stat-number">{ai_replies}</div>
-            <div class="stat-label">🤖 AI Replies Ready</div>
+            <div class="stat-number">{with_attachments}</div>
+            <div class="stat-label">📎 With Attachments</div>
         </div>
         <div class="stat-card purple">
             <div class="stat-number">{high_priority}</div>
             <div class="stat-label">🔥 High Priority</div>
-        </div>
-        <div class="stat-card orange">
-            <div class="stat-number">{with_attachments}</div>
-            <div class="stat-label">📎 With Attachments</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -570,36 +565,119 @@ def render_compose(email_data=None):
     
     if email_data:
         st.info(f"**Replying to:** {email_data.get('sender name', 'Unknown')} - {email_data.get('subject', 'No Subject')}")
-        st.markdown(f"**Original Subject:** {email_data.get('subject', 'No Subject')}")
         
         reply_subject = f"Re: {email_data.get('subject', '')}"
         recipient = email_data.get('sender email', '')
         
-        if st.session_state.get('use_ai_reply', False):
+        # Show original email content
+        with st.expander("📧 View Original Email", expanded=False):
+            st.markdown(f"**From:** {email_data.get('sender name', 'Unknown')} ({email_data.get('sender email', '')})")
+            st.markdown(f"**Department:** {email_data.get('department', 'N/A')}")
+            st.markdown(f"**Date:** {email_data.get('date', 'N/A')}")
+            st.markdown(f"**Summary:** {email_data.get('summary', 'No summary available')}")
+            if email_data.get('aireply'):
+                st.markdown("---")
+                st.markdown("**AI Suggestion:**")
+                st.markdown(email_data.get('aireply', ''), unsafe_allow_html=True)
+        
+        # Template selection for reply
+        st.markdown("### 📝 Choose Reply Method")
+        reply_method = st.radio(
+            "How would you like to reply?",
+            options=["Custom Message", "Use Template", "Use AI Suggestion"],
+            horizontal=True
+        )
+        
+        initial_body = ""
+        
+        if reply_method == "Use AI Suggestion":
             ai_reply_body = email_data.get('aireply', '')
-            initial_body = ai_reply_body if ai_reply_body else ""
-        else:
-            initial_body = ""
+            initial_body = ai_reply_body if ai_reply_body else "No AI suggestion available for this email."
+        elif reply_method == "Use Template":
+            st.markdown("**Select a Template:**")
+            templates = {
+                "Acknowledgment": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for your email regarding <strong>{email_data.get('subject', 'this matter')}</strong>. I have reviewed the details and will follow up with specific action items by end of day.</p><p>In the meantime, please let me know if you need any additional information.</p><p>Best regards</p>",
+                "Schedule Meeting": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Regarding <strong>{email_data.get('subject', 'this matter')}</strong>, I suggest we schedule a brief meeting to discuss this in detail. I have availability tomorrow afternoon or Thursday morning.</p><p>Please let me know what works best for you.</p><p>Best regards</p>",
+                "Request More Info": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for reaching out about <strong>{email_data.get('subject', 'this matter')}</strong>. To better assist you, could you please provide additional details about:</p><ul><li>Specific requirements</li><li>Timeline expectations</li><li>Any relevant documentation</li></ul><p>Looking forward to your response.</p><p>Best regards</p>",
+                "Approval": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for the update on <strong>{email_data.get('subject', 'this matter')}</strong>. I've reviewed the information and approve the proposed approach.</p><p>Let's proceed as discussed and reconvene next week to review progress.</p><p>Best regards</p>",
+                "Follow Up": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>I've received your email about <strong>{email_data.get('subject', 'this matter')}</strong> and am currently reviewing the details. I should have feedback for you by tomorrow morning.</p><p>Thanks for your patience on this matter.</p><p>Best regards</p>"
+            }
+            
+            template_choice = st.selectbox(
+                "Choose a template:",
+                options=list(templates.keys())
+            )
+            
+            if template_choice:
+                initial_body = templates[template_choice]
+                st.markdown("**Template Preview:**")
+                st.markdown(f"<div style='background: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #4CAF50;'>{initial_body}</div>", unsafe_allow_html=True)
     else:
         st.info("Composing a new email.")
         reply_subject = ""
         recipient = ""
         initial_body = ""
     
+    st.markdown("---")
+    st.markdown("### ✍️ Compose Your Message")
+    
     with st.form("compose_form"):
-        to_address = st.text_input("To:", value=recipient)
-        subject = st.text_input("Subject:", value=reply_subject)
-        body = st.text_area("Body:", value=initial_body, height=300)
+        to_address = st.text_input("📧 To:", value=recipient, placeholder="recipient@example.com")
+        cc_address = st.text_input("📧 CC:", placeholder="cc@example.com (optional)")
+        subject = st.text_input("📋 Subject:", value=reply_subject, placeholder="Email subject")
         
-        col1, col2, col3 = st.columns([1, 1, 3])
+        st.markdown("**📝 Message Body:**")
+        
+        # Editor options
+        col_editor1, col_editor2 = st.columns([1, 4])
+        with col_editor1:
+            editor_mode = st.selectbox("Editor Mode:", ["Plain Text", "HTML"])
+        with col_editor2:
+            if editor_mode == "HTML":
+                st.info("HTML mode: You can use HTML tags for formatting (e.g., <strong>, <em>, <ul>, <li>)")
+        
+        body = st.text_area(
+            "Body:", 
+            value=initial_body, 
+            height=400,
+            placeholder="Type your message here..." if editor_mode == "Plain Text" else "Type your message here using HTML formatting...",
+            label_visibility="collapsed"
+        )
+        
+        # Formatting toolbar hint
+        if editor_mode == "HTML":
+            st.markdown("""
+            <div style='background: #e8f5e9; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 13px;'>
+            <strong>Quick HTML Tips:</strong> 
+            &lt;strong&gt;bold&lt;/strong&gt;, 
+            &lt;em&gt;italic&lt;/em&gt;, 
+            &lt;p&gt;paragraph&lt;/p&gt;, 
+            &lt;ul&gt;&lt;li&gt;bullet&lt;/li&gt;&lt;/ul&gt;
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Attachment section
+        st.markdown("**📎 Attachments:**")
+        uploaded_files = st.file_uploader("Add files", accept_multiple_files=True, label_visibility="collapsed")
+        
+        if uploaded_files:
+            st.write(f"📎 {len(uploaded_files)} file(s) selected:")
+            for file in uploaded_files:
+                st.write(f"  • {file.name}")
+        
+        st.markdown("---")
+        
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
         with col1:
-            send_button = st.form_submit_button("📤 Send", use_container_width=True, type="primary")
+            send_button = st.form_submit_button("📤 Send Email", use_container_width=True, type="primary")
         with col2:
-            draft_button = st.form_submit_button("📋 Save Draft", use_container_width=True)
+            draft_button = st.form_submit_button("📋 Save as Draft", use_container_width=True)
+        with col3:
+            preview_button = st.form_submit_button("👁️ Preview", use_container_width=True)
         
         if send_button:
             if to_address and subject and body:
-                st.success(f"✅ Email sent to {to_address}!")
+                st.success(f"✅ Email sent successfully to {to_address}!")
                 st.balloons()
                 time.sleep(1)
                 st.session_state['mode'] = 'inbox'
@@ -607,7 +685,7 @@ def render_compose(email_data=None):
                 st.session_state['use_ai_reply'] = False
                 st.rerun()
             else:
-                st.error("Please fill in all fields before sending.")
+                st.error("❌ Please fill in To, Subject, and Body fields before sending.")
         
         if draft_button:
             if 'drafts' not in st.session_state:
@@ -616,21 +694,31 @@ def render_compose(email_data=None):
             draft = {
                 'original_email': email_data,
                 'to': to_address,
+                'cc': cc_address,
                 'subject': subject,
                 'body': body,
-                'timestamp': datetime.now().isoformat()
+                'editor_mode': editor_mode,
+                'attachments': [file.name for file in uploaded_files] if uploaded_files else [],
+                'created': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             st.session_state['drafts'].append(draft)
-            st.success("📋 Draft saved!")
+            st.success("📋 Draft saved successfully!")
             time.sleep(1)
             st.session_state['mode'] = 'drafts'
             st.rerun()
-
-    if st.button("⬅️ Back to Inbox"):
-        st.session_state['mode'] = 'inbox'
-        st.session_state['selected_email'] = None
-        st.session_state['use_ai_reply'] = False
-        st.rerun()
+        
+        if preview_button:
+            st.markdown("---")
+            st.markdown("### 👁️ Email Preview")
+            st.markdown(f"""
+            <div style='background: white; padding: 20px; border-radius: 10px; border: 2px solid #e0e0e0;'>
+                <div style='color: black;'><strong>To:</strong> {to_address}</div>
+                {f"<div style='color: black;'><strong>CC:</strong> {cc_address}</div>" if cc_address else ""}
+                <div style='color: black;'><strong>Subject:</strong> {subject}</div>
+                <hr style='margin: 15px 0;'>
+                <div style='color: black;'>{body if editor_mode == "HTML" else body.replace(chr(10), "<br>")}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 def render_drafts():
     """Renders the drafts page showing saved draft emails."""
@@ -652,8 +740,9 @@ def render_drafts():
         with st.container():
             st.markdown(f"### Draft #{idx + 1}")
             st.markdown(f"**To:** {draft.get('to', 'N/A')}")
+            st.markdown(f"**CC:** {draft.get('cc', 'N/A')}")
             st.markdown(f"**Subject:** {draft.get('subject', 'No Subject')}")
-            st.markdown(f"**Saved:** {draft.get('timestamp', 'Unknown')}")
+            st.markdown(f"**Saved:** {draft.get('created', 'Unknown')}")
             
             with st.expander("View Draft Body"):
                 st.markdown(draft.get('body', 'No content'), unsafe_allow_html=True)
