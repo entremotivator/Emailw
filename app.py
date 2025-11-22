@@ -30,15 +30,42 @@ st.markdown("""
         margin: 15px 0;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         transition: all 0.3s ease;
+        position: relative;
     }
     .email-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 6px 20px rgba(0,0,0,0.12);
     }
+    
+    .ai-reply-badge {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+    }
+    
+    .ai-reply-preview {
+        background: #f0fdf4;
+        border-left: 4px solid #10b981;
+        padding: 12px 16px;
+        margin: 12px 0;
+        border-radius: 6px;
+        font-size: 14px;
+        color: #065f46;
+        line-height: 1.5;
+    }
+    
     .sender-info {
         display: flex;
         align-items: center;
         margin-bottom: 12px;
+        margin-top: 10px;
     }
     .sender-avatar {
         width: 48px;
@@ -308,9 +335,12 @@ def connect_to_gsheet(credentials, sheet_url):
         return None
 
 
-def load_data_from_gsheet(worksheet):
+def load_data_from_gsheet(credentials):
     """Load data from Google Sheets into a DataFrame."""
     try:
+        gc = gspread.authorize(credentials)
+        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
+        worksheet = gc.open_by_key(sheet_id).sheet1
         records = worksheet.get_all_records()
         return pd.DataFrame(records)
     except Exception as e:
@@ -446,10 +476,18 @@ def display_email_card(email_data, index):
     attachment_class = "attachment" if has_attachment else "no-attachment"
     attachment_text = "📎 Has Attachment" if has_attachment else "No Attachment"
     
-    has_ai_reply = bool(ai_reply and str(ai_reply).strip() != "")
+    has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
+    
+    ai_reply_badge = ""
+    ai_reply_preview = ""
+    if has_ai_reply:
+        ai_reply_badge = '<div class="ai-reply-badge">🤖 AI Reply Ready</div>'
+        preview_text = str(ai_reply)[:150] + "..." if len(str(ai_reply)) > 150 else str(ai_reply)
+        ai_reply_preview = f'<div class="ai-reply-preview"><strong>AI Reply Preview:</strong><br/>{preview_text}</div>'
 
     card_html = f"""
     <div class="email-card">
+        {ai_reply_badge}
         <div class="sender-info">
             <div class="sender-avatar">{initials}</div>
             <div class="sender-details">
@@ -459,6 +497,7 @@ def display_email_card(email_data, index):
         </div>
         <div class="subject">{subject}</div>
         <div class="summary">{summary}</div>
+        {ai_reply_preview}
         <div class="email-meta">
             <div class="date">📅 {formatted_date} | 🏢 {department}</div>
             <div class="{attachment_class}">{attachment_text}</div>
@@ -467,40 +506,36 @@ def display_email_card(email_data, index):
     """
     st.markdown(card_html, unsafe_allow_html=True)
     
-    if has_ai_reply:
-        st.markdown('<span class="draft-badge">🤖 AI Reply Ready</span>', unsafe_allow_html=True)
-    
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
-        if st.button("✉️ Reply", key=f"reply_{index}"):
+        if st.button("✉️ Reply", key=f"reply_{index}", use_container_width=True):
             st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = email_data
+            st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = False
             st.rerun()
     with col2:
-        if st.button("🤖 AI Reply", key=f"ai_reply_{index}", disabled=not has_ai_reply):
+        ai_button_label = "🤖 Use AI Reply" if has_ai_reply else "🤖 No AI Reply"
+        if st.button(ai_button_label, key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True):
             st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = email_data
+            st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = True
             st.rerun()
     with col3:
-        if st.button("📝 Quick Reply", key=f"quick_{index}"):
+        if st.button("⚡ Quick Reply", key=f"quick_{index}", use_container_width=True):
             st.session_state['composing_email'] = True
-            st.session_state['reply_to'] = email_data
+            st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = "Quick Acknowledgment"
             st.session_state['use_ai_reply'] = False
             st.rerun()
     with col4:
-        if st.button("📋 Draft", key=f"draft_{index}"):
+        if st.button("📋 Save as Draft", key=f"draft_{index}", use_container_width=True):
             draft_body = ai_reply if has_ai_reply else ""
-            save_draft(email_data, draft_body)
-            st.success("Saved to drafts!")
-    with col5:
-        if has_ai_reply and st.button("👁️ Preview AI", key=f"preview_{index}"):
-            with st.expander("🤖 AI Generated Reply Preview", expanded=True):
-                st.markdown(ai_reply, unsafe_allow_html=True)
+            save_draft(dict(email_data), draft_body)
+            st.success("✅ Saved to drafts!")
+    
+    st.markdown("---")
 
 
 def save_draft(email_data, body):
@@ -522,11 +557,13 @@ def render_email_composer(email_data=None, template_name=None):
     st.markdown('<div class="editor-container">', unsafe_allow_html=True)
     st.markdown('<div class="editor-header">✍️ Compose Reply</div>', unsafe_allow_html=True)
     
-    if email_data:
+    has_email_data = email_data is not None and (isinstance(email_data, dict) or hasattr(email_data, 'get'))
+    
+    if has_email_data:
         st.info(f"📬 Replying to: **{email_data.get('sender name')}** - {email_data.get('subject')}")
     
     use_ai_reply = st.session_state.get('use_ai_reply', False)
-    ai_reply_content = email_data.get('AIreply', '') if email_data and use_ai_reply else ''
+    ai_reply_content = email_data.get('AIreply', '') if has_email_data and use_ai_reply else ''
     
     if use_ai_reply and ai_reply_content:
         st.success("🤖 Using AI-generated reply from Google Sheets - Ready to send or edit!")
@@ -552,19 +589,19 @@ def render_email_composer(email_data=None, template_name=None):
         st.success(f"✅ Using template: **{selected_template}** - {template['description']}")
         
         subject = template['subject'].format(
-            original_subject=email_data.get('subject', '') if email_data else ''
+            original_subject=email_data.get('subject', '') if has_email_data else ''
         )
         body = template['body'].format(
-            sender_name=email_data.get('sender name', '[Sender Name]') if email_data else '[Sender Name]',
-            subject=email_data.get('subject', '[Subject]') if email_data else '[Subject]'
+            sender_name=email_data.get('sender name', '[Sender Name]') if has_email_data else '[Sender Name]',
+            subject=email_data.get('subject', '[Subject]') if has_email_data else '[Subject]'
         )
     else:
-        subject = f"Re: {email_data.get('subject', '')}" if email_data else ""
+        subject = f"Re: {email_data.get('subject', '')}" if has_email_data else ""
         body = ""
     
     st.markdown("---")
     
-    email_to = st.text_input("To:", value=email_data.get('sender email', '') if email_data else '')
+    email_to = st.text_input("To:", value=email_data.get('sender email', '') if has_email_data else '')
     email_subject = st.text_input("Subject:", value=subject)
     
     editor_mode = st.radio("Editor Mode:", ["HTML Editor", "Plain Text"], horizontal=True)
@@ -588,6 +625,7 @@ def render_email_composer(email_data=None, template_name=None):
                 st.session_state['composing_email'] = False
                 st.session_state['selected_template'] = None
                 st.session_state['use_ai_reply'] = False
+                st.session_state['reply_to'] = None
                 time.sleep(2)
                 st.rerun()
             else:
@@ -595,7 +633,7 @@ def render_email_composer(email_data=None, template_name=None):
     
     with col2:
         if st.button("💾 Save Draft", use_container_width=True):
-            if email_data:
+            if has_email_data:
                 save_draft(email_data, email_body)
                 st.success("Draft saved!")
     
@@ -604,6 +642,7 @@ def render_email_composer(email_data=None, template_name=None):
             st.session_state['composing_email'] = False
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = False
+            st.session_state['reply_to'] = None
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
@@ -644,109 +683,78 @@ def render_drafts():
 
 
 def main():
-    if 'composing_email' not in st.session_state:
-        st.session_state['composing_email'] = False
-    if 'drafts' not in st.session_state:
-        st.session_state['drafts'] = []
-    if 'selected_template' not in st.session_state:
-        st.session_state['selected_template'] = None
-    if 'use_ai_reply' not in st.session_state:
-        st.session_state['use_ai_reply'] = False
-    
+    """Main application logic."""
     st.title("📧 Advanced Email Management Dashboard")
-    st.markdown("**Manage emails, compose replies with AI-powered templates, and organize drafts - all in one place**")
+    st.markdown("**Manage your emails with AI-powered replies and smart drafts**")
     
-    st.sidebar.header("🔐 Google Sheets Authentication")
-    st.sidebar.markdown("Upload your service account JSON file to connect to Google Sheets")
-    
-    uploaded_file = st.sidebar.file_uploader("Upload JSON Service Account File", type=['json'])
-    sheet_url = st.sidebar.text_input(
-        "Google Sheets URL",
-        value="https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit?usp=sharing"
-    )
-    
-    st.sidebar.markdown("---")
-    st.sidebar.header("⚙️ Settings")
-    auto_refresh = st.sidebar.checkbox("🔄 Auto-refresh data", value=False)
-    refresh_interval = st.sidebar.slider("Refresh interval (seconds)", 30, 300, 60)
-    
-    if st.sidebar.button("🔄 Refresh Data Now", use_container_width=True):
-        st.rerun()
-    
-    st.sidebar.markdown("---")
-    st.sidebar.header("📊 Quick Stats")
-    st.sidebar.info("**Expected Columns:**\n- sender name\n- sender email\n- subject\n- summary\n- Date\n- Attachment\n- AIreply\n- department")
-    
-    tab1, tab2, tab3 = st.tabs(["📬 Inbox", "✍️ Compose", "📝 Drafts"])
-    
-    with tab1:
-        df = pd.DataFrame()
+    # Sidebar: JSON credentials upload
+    with st.sidebar:
+        st.header("🔑 Google Sheets Credentials")
+        st.markdown("Upload your `credentials.json` file:")
+        uploaded_file = st.file_uploader("Choose credentials.json", type=["json"])
         
-        if uploaded_file and sheet_url:
+        if uploaded_file:
             try:
-                credentials = load_credentials_from_json(uploaded_file.read().decode('utf-8'))
-                if credentials:
-                    with st.spinner("Connecting to Google Sheets..."):
-                        worksheet = connect_to_gsheet(credentials, sheet_url)
-                        if worksheet:
-                            df = load_data_from_gsheet(worksheet)
-                            st.sidebar.success("✅ Connected to Google Sheets")
+                credentials_data = json.load(uploaded_file)
+                st.session_state['credentials'] = credentials_data
+                st.success("✅ Credentials loaded successfully!")
             except Exception as e:
-                st.sidebar.error(f"Connection error: {e}")
-        
-        if df.empty:
-            st.info("📝 Using sample data. Upload credentials in the sidebar to load live data from Google Sheets.")
-            df = create_sample_data()
-        else:
-            st.success(f"✅ Loaded {len(df)} emails from Google Sheets")
-        
-        display_stats(df)
-        
-        st.markdown("### 🔍 Search & Filter")
-        col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
-        with col1:
-            search = st.text_input("Search emails", placeholder="Search by sender, subject, or summary...", label_visibility="collapsed")
-        with col2:
-            attach_filter = st.selectbox("Filter", ["All Emails", "With Attachments", "Without Attachments"], label_visibility="collapsed")
-        with col3:
-            departments = ["All Departments"] + sorted(df["department"].unique().tolist()) if "department" in df.columns else ["All Departments"]
-            dept_filter = st.selectbox("Department", departments, label_visibility="collapsed")
-        with col4:
-            sort_order = st.selectbox("Sort", ["Newest First", "Oldest First"], label_visibility="collapsed")
-        
-        filtered_df = df.copy()
-        
-        if search:
-            mask = (
-                filtered_df["sender name"].str.contains(search, case=False, na=False) |
-                filtered_df["subject"].str.contains(search, case=False, na=False) |
-                filtered_df["summary"].str.contains(search, case=False, na=False)
-            )
-            filtered_df = filtered_df[mask]
-        
-        if attach_filter == "With Attachments":
-            filtered_df = filtered_df[filtered_df["Attachment"].str.lower().isin(['yes', 'true', '1'])]
-        elif attach_filter == "Without Attachments":
-            filtered_df = filtered_df[~filtered_df["Attachment"].str.lower().isin(['yes', 'true', '1'])]
-        
-        if dept_filter != "All Departments" and "department" in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df["department"] == dept_filter]
-        
-        try:
-            filtered_df["Date"] = pd.to_datetime(filtered_df["Date"])
-            ascending = sort_order == "Oldest First"
-            filtered_df = filtered_df.sort_values("Date", ascending=ascending)
-        except:
-            pass
+                st.error(f"❌ Error loading credentials: {str(e)}")
         
         st.markdown("---")
-        st.markdown(f"### 📬 Inbox ({len(filtered_df)} emails)")
+        st.header("⚙️ Settings")
+        auto_refresh = st.checkbox("🔄 Auto-refresh", value=False)
+        refresh_interval = st.slider("Refresh interval (seconds)", 10, 120, 30)
         
-        if filtered_df.empty:
-            st.warning("⚠️ No matching emails found. Try adjusting your search filters.")
+        st.markdown("---")
+        st.header("🔧 Display Options")
+        sort_by_ai = st.checkbox("📌 Show AI Replies First", value=True, help="Prioritize emails with AI-generated replies")
+        
+        st.markdown("---")
+        st.markdown("**Connected Sheet:**")
+        st.code("https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/", language="text")
+    
+    # Check credentials
+    if 'credentials' not in st.session_state:
+        st.warning("⚠️ Please upload your Google Sheets credentials in the sidebar to continue.")
+        st.info("👈 Click on the sidebar to upload your `credentials.json` file")
+        return
+    
+    # Load data
+    with st.spinner("📥 Loading emails from Google Sheets..."):
+        df = load_data_from_gsheet(st.session_state['credentials'])
+    
+    if df is None or df.empty:
+        st.error("❌ No data found or error loading from Google Sheets")
+        return
+    
+    if sort_by_ai:
+        df['has_ai_reply'] = df['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))
+        df = df.sort_values('has_ai_reply', ascending=False).reset_index(drop=True)
+        df = df.drop('has_ai_reply', axis=1)
+    
+    display_stats(df)
+    
+    # Department filter
+    st.markdown("### 🔍 Filter by Department")
+    departments = ["All"] + sorted(df['department'].dropna().unique().tolist())
+    selected_dept = st.selectbox("Choose Department:", departments)
+    
+    if selected_dept != "All":
+        df = df[df['department'] == selected_dept]
+    
+    st.markdown(f"**Showing {len(df)} emails**")
+    
+    tab1, tab2, tab3 = st.tabs(["📥 Inbox", "✍️ Compose", "📋 Drafts"])
+    
+    with tab1:
+        st.markdown("### 📬 Your Emails")
+        
+        if df.empty:
+            st.info("No emails to display for the selected department.")
         else:
-            for idx, row in filtered_df.iterrows():
-                display_email_card(row, idx)
+            for index, row in df.iterrows():
+                display_email_card(row.to_dict(), index)
         
         if auto_refresh:
             time.sleep(refresh_interval)
@@ -764,11 +772,40 @@ def main():
             if st.button("✉️ Compose New Email", type="primary"):
                 st.session_state['composing_email'] = True
                 st.session_state['reply_to'] = None
+                st.session_state['selected_template'] = None
                 st.session_state['use_ai_reply'] = False
                 st.rerun()
     
     with tab3:
-        render_drafts()
+        st.markdown("### 📋 Saved Drafts")
+        
+        drafts = st.session_state.get('drafts', [])
+        
+        if not drafts:
+            st.info("No drafts saved yet. Save a draft from the Inbox tab to see it here.")
+        else:
+            for idx, draft in enumerate(drafts):
+                original = draft.get('original_email', {})
+                with st.expander(f"📧 Draft {idx + 1}: {draft.get('subject', 'No Subject')}", expanded=False):
+                    st.markdown(f"**To:** {original.get('sender email', 'N/A')}")
+                    st.markdown(f"**Subject:** {draft.get('subject', 'N/A')}")
+                    st.markdown(f"**Saved:** {draft.get('timestamp', 'N/A')}")
+                    st.markdown("**Body:**")
+                    st.text_area("", value=draft.get('body', ''), height=200, key=f"draft_body_{idx}", disabled=True)
+                    
+                    col1, col2, col3 = st.columns([1, 1, 3])
+                    with col1:
+                        if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True):
+                            st.session_state['composing_email'] = True
+                            st.session_state['reply_to'] = original
+                            st.session_state['selected_template'] = None
+                            st.session_state['use_ai_reply'] = False
+                            st.rerun()
+                    with col2:
+                        if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
+                            st.session_state['drafts'].pop(idx)
+                            st.success("Draft deleted!")
+                            st.rerun()
 
 
 if __name__ == "__main__":
