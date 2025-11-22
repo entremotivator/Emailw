@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 import time
+import re
 
 # ------------------------------
 # 🔧 PAGE CONFIGURATION
@@ -21,20 +22,36 @@ st.set_page_config(
 # ------------------------------
 st.markdown("""
 <style>
-    /* Email Cards */
+    /* Global Styling */
+    .main {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+    
+    /* Email Cards - Enhanced with vibrant colors */
     .email-card {
-        background: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 15px 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 2px solid #e0e7ff;
+        border-radius: 16px;
+        padding: 28px;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(79, 70, 229, 0.15);
         transition: all 0.3s ease;
         position: relative;
+        overflow: hidden;
+    }
+    .email-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 6px;
+        height: 100%;
+        background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
     }
     .email-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+        transform: translateY(-6px);
+        box-shadow: 0 12px 30px rgba(79, 70, 229, 0.25);
+        border-color: #818cf8;
     }
     
     .ai-reply-badge {
@@ -43,33 +60,47 @@ st.markdown("""
         right: 15px;
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        padding: 8px 16px;
+        border-radius: 25px;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
     }
     
     .ai-reply-preview {
-        background: #f0fdf4;
-        border-left: 4px solid #10b981;
-        padding: 12px 16px;
-        margin: 12px 0;
-        border-radius: 6px;
+        background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+        border-left: 5px solid #10b981;
+        padding: 16px 20px;
+        margin: 16px 0;
+        border-radius: 10px;
         font-size: 14px;
         color: #065f46;
-        line-height: 1.5;
+        line-height: 1.7;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+    }
+    
+    .ai-reply-preview strong {
+        color: #047857;
+        display: block;
+        margin-bottom: 8px;
+        font-size: 15px;
     }
     
     .sender-info {
         display: flex;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 16px;
         margin-top: 10px;
     }
     .sender-avatar {
-        width: 48px;
-        height: 48px;
+        width: 56px;
+        height: 56px;
         border-radius: 50%;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         display: flex;
@@ -77,144 +108,204 @@ st.markdown("""
         justify-content: center;
         color: white;
         font-weight: bold;
-        font-size: 18px;
-        margin-right: 12px;
+        font-size: 22px;
+        margin-right: 16px;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        border: 3px solid white;
     }
     .sender-details {
         flex: 1;
     }
     .sender-name {
         font-weight: bold;
-        font-size: 17px;
+        font-size: 19px;
         color: #1f2937;
+        margin-bottom: 4px;
     }
     .sender-email {
         color: #6b7280;
-        font-size: 13px;
+        font-size: 14px;
     }
     .subject {
-        font-size: 20px;
+        font-size: 22px;
         font-weight: 700;
         color: #111827;
-        margin: 15px 0 10px 0;
+        margin: 18px 0 12px 0;
         line-height: 1.4;
+        padding-left: 10px;
     }
     .summary {
         color: #4b5563;
-        font-size: 15px;
-        line-height: 1.6;
-        margin-bottom: 18px;
+        font-size: 16px;
+        line-height: 1.7;
+        margin-bottom: 20px;
+        padding-left: 10px;
     }
     .email-meta {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-size: 13px;
+        font-size: 14px;
         color: #9ca3af;
-        border-top: 1px solid #f3f4f6;
-        padding-top: 12px;
-        margin-bottom: 15px;
+        border-top: 2px solid #f3f4f6;
+        padding-top: 14px;
+        margin-bottom: 18px;
+        padding-left: 10px;
     }
     .date {
-        font-weight: 500;
-        color: #6b7280;
+        font-weight: 600;
+        color: #6366f1;
     }
     .attachment {
-        background: #dbeafe;
+        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
         color: #1e40af;
-        padding: 5px 10px;
-        border-radius: 6px;
-        font-weight: 500;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 13px;
     }
     .no-attachment {
-        color: #9ca3af;
+        color: #d1d5db;
+        font-size: 13px;
     }
     
-    /* Stats Cards */
+    /* Stats Cards - More colorful */
     .stats-container {
         display: flex;
         gap: 20px;
-        margin-bottom: 30px;
+        margin-bottom: 35px;
     }
     .stat-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 25px;
-        border-radius: 12px;
+        padding: 30px;
+        border-radius: 16px;
         text-align: center;
         flex: 1;
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        transition: transform 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-card.green {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    }
+    .stat-card.blue {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    }
+    .stat-card.orange {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
     }
     .stat-number {
-        font-size: 36px;
+        font-size: 42px;
         font-weight: bold;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
     }
     .stat-label {
-        font-size: 14px;
+        font-size: 15px;
         opacity: 0.95;
-        font-weight: 500;
+        font-weight: 600;
     }
     
     /* Email Editor */
     .editor-container {
-        background: white;
-        border-radius: 12px;
-        padding: 30px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        margin: 20px 0;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border-radius: 16px;
+        padding: 35px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+        margin: 25px 0;
+        border: 2px solid #e0e7ff;
     }
     .editor-header {
-        font-size: 24px;
+        font-size: 28px;
         font-weight: bold;
         color: #111827;
-        margin-bottom: 20px;
-        border-bottom: 2px solid #667eea;
-        padding-bottom: 10px;
+        margin-bottom: 25px;
+        border-bottom: 3px solid #667eea;
+        padding-bottom: 12px;
+    }
+    
+    /* HTML Preview Box */
+    .html-preview {
+        background: white;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    /* Plain Text Display - Enhanced */
+    .plain-text-display {
+        background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+        border: 2px solid #d1d5db;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        font-family: 'Courier New', monospace;
+        font-size: 15px;
+        line-height: 1.8;
+        color: #1f2937;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    /* Draft Card Styling */
+    .draft-card {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 2px solid #fbbf24;
+        border-radius: 14px;
+        padding: 24px;
+        margin: 16px 0;
+        box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+        transition: all 0.3s ease;
+    }
+    .draft-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(251, 191, 36, 0.4);
+    }
+    
+    .draft-badge {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+        display: inline-block;
+        margin-left: 12px;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
     }
     
     /* Template Cards */
     .template-card {
         background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-        border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
+        border-radius: 12px;
+        padding: 22px;
+        margin: 12px 0;
         cursor: pointer;
         transition: all 0.3s ease;
         border: 2px solid transparent;
     }
     .template-card:hover {
         border-color: #667eea;
-        transform: scale(1.02);
+        transform: scale(1.03);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
     }
     .template-title {
-        font-size: 18px;
+        font-size: 19px;
         font-weight: bold;
         color: #1f2937;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
     }
     .template-desc {
         font-size: 14px;
         color: #6b7280;
-    }
-    
-    /* Draft Badge */
-    .draft-badge {
-        background: #fef3c7;
-        color: #92400e;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-        margin-left: 10px;
-    }
-    
-    /* Action Buttons */
-    .action-buttons {
-        display: flex;
-        gap: 10px;
-        margin-top: 15px;
+        line-height: 1.5;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -335,7 +426,7 @@ def connect_to_gsheet(credentials, sheet_url):
         return None
 
 
-def load_data_from_gsheet(credentials_dict):
+def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"):
     """Load data from Google Sheets into a DataFrame."""
     try:
         scope = [
@@ -345,7 +436,8 @@ def load_data_from_gsheet(credentials_dict):
         credentials = Credentials.from_service_account_info(credentials_dict, scopes=scope)
         
         gc = gspread.authorize(credentials)
-        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
+        # sheet_id = sheet_url.split('/d/')[1].split('/')[0] # This line was hardcoded before
+        sheet_id = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc" # Keep hardcoded for now, can be made dynamic
         worksheet = gc.open_by_key(sheet_id).sheet1
         records = worksheet.get_all_records()
         
@@ -435,47 +527,36 @@ def get_initials(name):
 
 
 def display_stats(df):
-    """Display statistics about emails in a nice card layout."""
-    col1, col2, col3, col4 = st.columns(4)
+    """Display email statistics in colorful cards."""
+    total_emails = len(df)
+    ai_replies = df['AIreply'].notna().sum() if 'AIreply' in df.columns else 0
+    with_attachments = df[df['Attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0] if 'Attachment' in df.columns else 0
+    drafts_count = len(st.session_state.get('drafts', []))
     
-    with col1:
-        st.markdown(f"""
+    st.markdown("""
+    <div class="stats-container">
         <div class="stat-card">
-            <div class="stat-number">{len(df)}</div>
-            <div class="stat-label">📬 Total Emails</div>
+            <div class="stat-number">{}</div>
+            <div class="stat-label">📧 Total Emails</div>
         </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        ai_replies = len(df[df['AIreply'].notna() & (df['AIreply'] != '')]) if 'AIreply' in df.columns else 0
-        st.markdown(f"""
-        <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-            <div class="stat-number">{ai_replies}</div>
+        <div class="stat-card green">
+            <div class="stat-number">{}</div>
             <div class="stat-label">🤖 AI Replies Ready</div>
         </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        attachments = len(df[df['Attachment'].str.lower().isin(['yes', 'true', '1'])]) if 'Attachment' in df.columns else 0
-        st.markdown(f"""
-        <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-            <div class="stat-number">{attachments}</div>
+        <div class="stat-card blue">
+            <div class="stat-number">{}</div>
             <div class="stat-label">📎 With Attachments</div>
         </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        drafts_count = len(st.session_state.get('drafts', []))
-        st.markdown(f"""
-        <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-            <div class="stat-number">{drafts_count}</div>
-            <div class="stat-label">📝 Saved Drafts</div>
+        <div class="stat-card orange">
+            <div class="stat-number">{}</div>
+            <div class="stat-label">📋 Saved Drafts</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """.format(total_emails, ai_replies, with_attachments, drafts_count), unsafe_allow_html=True)
 
 
 def display_email_card(email_data, index):
-    """Render one email entry as a card with action buttons."""
+    """Render one email entry as a colorful card with action buttons."""
     sender_name = email_data.get("sender name", "Unknown Sender")
     sender_email = email_data.get("sender email", "")
     subject = email_data.get("subject", "No Subject")
@@ -502,8 +583,10 @@ def display_email_card(email_data, index):
     ai_reply_preview = ""
     if has_ai_reply:
         ai_reply_badge = '<div class="ai-reply-badge">🤖 AI Reply Ready</div>'
-        preview_text = str(ai_reply)[:150] + "..." if len(str(ai_reply)) > 150 else str(ai_reply)
-        ai_reply_preview = f'<div class="ai-reply-preview"><strong>AI Reply Preview:</strong><br/>{preview_text}</div>'
+        # Strip HTML tags for preview
+        preview_text = re.sub('<[^<]+?>', '', str(ai_reply))
+        preview_text = preview_text[:200] + "..." if len(preview_text) > 200 else preview_text
+        ai_reply_preview = f'<div class="ai-reply-preview"><strong>🤖 AI Reply Preview:</strong><br/>{preview_text}</div>'
 
     card_html = f"""
     <div class="email-card">
@@ -573,7 +656,7 @@ def save_draft(email_data, body):
 
 
 def render_email_composer(email_data=None, template_name=None):
-    """Render email composition interface."""
+    """Render email composition interface with HTML and Plain Text modes."""
     st.markdown('<div class="editor-container">', unsafe_allow_html=True)
     st.markdown('<div class="editor-header">✍️ Compose Reply</div>', unsafe_allow_html=True)
     
@@ -631,9 +714,22 @@ def render_email_composer(email_data=None, template_name=None):
         email_body = st.text_area("", value=body, height=400, key="html_editor")
         
         with st.expander("👁️ Preview HTML", expanded=False):
+            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
             st.markdown(email_body, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
-        email_body = st.text_area("Message:", value="", height=300, key="plain_editor")
+        st.markdown("**Plain Text Message:**")
+        
+        # Convert HTML to plain text if switching from HTML mode
+        plain_body = re.sub('<[^<]+?>', '', body) if body else ""
+        plain_body = plain_body.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
+        
+        email_body = st.text_area("", value=plain_body, height=350, key="plain_editor", 
+                                   placeholder="Type your message here in plain text...")
+        
+        if email_body:
+            with st.expander("👁️ Preview Plain Text", expanded=False):
+                st.markdown(f'<div class="plain-text-display">{email_body}</div>', unsafe_allow_html=True)
     
     col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
     
@@ -649,16 +745,16 @@ def render_email_composer(email_data=None, template_name=None):
                 time.sleep(2)
                 st.rerun()
             else:
-                st.error("Please fill in all fields")
+                st.error("⚠️ Please fill in all fields")
     
     with col2:
         if st.button("💾 Save Draft", use_container_width=True):
             if has_email_data:
                 save_draft(email_data, email_body)
-                st.success("Draft saved!")
+                st.success("✅ Draft saved!")
     
     with col3:
-        if st.button("❌ Cancel", use_container_width=True):
+        if st.button("🔄 Clear", use_container_width=True):
             st.session_state['composing_email'] = False
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = False
@@ -704,74 +800,93 @@ def render_drafts():
 
 def main():
     """Main application logic."""
-    st.title("📧 Advanced Email Management Dashboard")
-    st.markdown("**Manage your emails with AI-powered replies and smart drafts**")
+    st.title("📧 Email Management Dashboard")
+    st.markdown("**Manage your emails efficiently with AI-powered replies**")
+    st.markdown("---")
     
-    # Sidebar: JSON credentials upload
+    # Sidebar configuration
     with st.sidebar:
-        st.header("🔑 Google Sheets Credentials")
-        st.markdown("Upload your `credentials.json` file:")
-        uploaded_file = st.file_uploader("Choose credentials.json", type=["json"])
+        st.markdown("### ⚙️ Configuration")
+        st.markdown("---")
         
-        if uploaded_file:
-            try:
-                credentials_data = json.load(uploaded_file)
-                st.session_state['credentials'] = credentials_data
-                st.success("✅ Credentials loaded successfully!")
-            except Exception as e:
-                st.error(f"❌ Error loading credentials: {str(e)}")
+        # JSON Credentials Upload
+        st.markdown("#### 🔐 Upload JSON Credentials")
+        uploaded_file = st.file_uploader("Choose your credentials JSON file", type=['json'])
+        
+        credentials_data = None
+        if uploaded_file is not None:
+            credentials_data = json.load(uploaded_file)
+            st.success("✅ Credentials loaded successfully!")
+        else:
+            st.info("📤 Please upload your Google Service Account JSON file")
         
         st.markdown("---")
-        st.header("⚙️ Settings")
-        auto_refresh = st.checkbox("🔄 Auto-refresh", value=False)
-        refresh_interval = st.slider("Refresh interval (seconds)", 10, 120, 30)
+        
+        # Google Sheets URL (hardcoded)
+        sheet_url = "https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/edit?usp=sharing"
+        st.markdown(f"**📊 Google Sheet:**")
+        st.code(sheet_url, language=None)
         
         st.markdown("---")
-        st.header("🔧 Display Options")
-        sort_by_ai = st.checkbox("📌 Show AI Replies First", value=True, help="Prioritize emails with AI-generated replies")
+        
+        # Department filter
+        st.markdown("#### 🏢 Filter by Department")
+        department_filter = st.selectbox(
+            "Select Department:",
+            ["All", "Sales", "Marketing", "IT", "HR", "Finance", "General"],
+            index=0
+        )
+        
+        # Sort option
+        st.markdown("#### 📑 Sort Emails")
+        sort_option = st.selectbox(
+            "Sort by:",
+            ["Date (Newest First)", "Date (Oldest First)", "AI Replies First", "Sender Name"],
+            index=0
+        )
+        
+        # Auto-refresh
+        st.markdown("#### 🔄 Auto Refresh")
+        auto_refresh = st.checkbox("Enable Auto Refresh", value=False)
+        refresh_interval = 60
+        if auto_refresh:
+            refresh_interval = st.slider("Refresh Interval (seconds)", 30, 300, 60)
         
         st.markdown("---")
-        st.markdown("**Connected Sheet:**")
-        st.code("https://docs.google.com/spreadsheets/d/1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc/", language="text")
-    
-    # Check credentials
-    if 'credentials' not in st.session_state:
-        st.warning("⚠️ Please upload your Google Sheets credentials in the sidebar to continue.")
-        st.info("👈 Click on the sidebar to upload your `credentials.json` file")
-        return
+        st.markdown("### 📊 Stats Overview")
     
     # Load data
-    with st.spinner("📥 Loading emails from Google Sheets..."):
-        df = load_data_from_gsheet(st.session_state['credentials'])
+    # Pass sheet_url to load_data_from_gsheet if needed for dynamic sheet selection
+    df = load_data_from_gsheet(credentials_data, sheet_url) 
     
-    if df is None or df.empty:
-        st.error("❌ No data found or error loading from Google Sheets")
-        return
+    if not df.empty:
+        # Apply department filter
+        if department_filter != "All":
+            df = df[df['department'] == department_filter]
+        
+        # Apply sorting
+        if sort_option == "Date (Newest First)":
+            df = df.sort_values('Date', ascending=False)
+        elif sort_option == "Date (Oldest First)":
+            df = df.sort_values('Date', ascending=True)
+        elif sort_option == "AI Replies First":
+            df['has_ai_reply'] = df['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))
+            df = df.sort_values(['has_ai_reply', 'Date'], ascending=[False, False])
+            df = df.drop('has_ai_reply', axis=1)
+        elif sort_option == "Sender Name":
+            df = df.sort_values('sender name')
+        
+        # Display statistics
+        display_stats(df)
     
-    if sort_by_ai:
-        df['has_ai_reply'] = df['AIreply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))
-        df = df.sort_values('has_ai_reply', ascending=False).reset_index(drop=True)
-        df = df.drop('has_ai_reply', axis=1)
-    
-    display_stats(df)
-    
-    # Department filter
-    st.markdown("### 🔍 Filter by Department")
-    departments = ["All"] + sorted(df['department'].dropna().unique().tolist())
-    selected_dept = st.selectbox("Choose Department:", departments)
-    
-    if selected_dept != "All":
-        df = df[df['department'] == selected_dept]
-    
-    st.markdown(f"**Showing {len(df)} emails**")
-    
+    # Tabs
     tab1, tab2, tab3 = st.tabs(["📥 Inbox", "✍️ Compose", "📋 Drafts"])
     
     with tab1:
         st.markdown("### 📬 Your Emails")
         
         if df.empty:
-            st.info("No emails to display for the selected department.")
+            st.info("📭 No emails to display for the selected department.")
         else:
             for index, row in df.iterrows():
                 display_email_card(row.to_dict(), index)
@@ -798,34 +913,63 @@ def main():
     
     with tab3:
         st.markdown("### 📋 Saved Drafts")
+        st.markdown("*Drafts are saved with AI-generated replies from the AIreply column*")
+        st.markdown("---")
         
         drafts = st.session_state.get('drafts', [])
         
         if not drafts:
-            st.info("No drafts saved yet. Save a draft from the Inbox tab to see it here.")
+            st.info("📭 No drafts saved yet. Click 'Save as Draft' on any email card or use 'Save Draft' in the composer.")
         else:
             for idx, draft in enumerate(drafts):
                 original = draft.get('original_email', {})
-                with st.expander(f"📧 Draft {idx + 1}: {draft.get('subject', 'No Subject')}", expanded=False):
-                    st.markdown(f"**To:** {original.get('sender email', 'N/A')}")
-                    st.markdown(f"**Subject:** {draft.get('subject', 'N/A')}")
-                    st.markdown(f"**Saved:** {draft.get('timestamp', 'N/A')}")
-                    st.markdown("**Body:**")
-                    st.text_area("", value=draft.get('body', ''), height=200, key=f"draft_body_{idx}", disabled=True)
+                draft_subject = draft.get('subject', 'No Subject')
+                draft_body = draft.get('body', '')
+                draft_time = draft.get('timestamp', '')
+                
+                # Format timestamp
+                try:
+                    dt = datetime.fromisoformat(draft_time)
+                    formatted_time = dt.strftime("%B %d, %Y at %I:%M %p")
+                except:
+                    formatted_time = draft_time
+                
+                # Check if draft has AI reply content
+                has_ai_content = bool(draft_body and str(draft_body).strip())
+                
+                with st.expander(f"📧 Draft {idx + 1}: {draft_subject} {'🤖' if has_ai_content else ''}", expanded=False):
+                    col1, col2 = st.columns([3, 1])
                     
-                    col1, col2, col3 = st.columns([1, 1, 3])
                     with col1:
-                        if st.button("✏️ Edit Draft", key=f"edit_draft_{idx}", use_container_width=True):
+                        st.markdown(f"**To:** {original.get('sender email', 'N/A')}")
+                        st.markdown(f"**Subject:** {draft_subject}")
+                        st.markdown(f"**Saved:** {formatted_time}")
+                        
+                        if has_ai_content:
+                            st.markdown("**Draft Content (from AIreply):**")
+                            # Display with proper HTML rendering
+                            st.markdown('<div class="html-preview">', unsafe_allow_html=True)
+                            st.markdown(draft_body, unsafe_allow_html=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.info("No content saved in this draft")
+                    
+                    with col2:
+                        if st.button("✏️ Edit", key=f"edit_draft_{idx}", use_container_width=True):
                             st.session_state['composing_email'] = True
                             st.session_state['reply_to'] = original
                             st.session_state['selected_template'] = None
                             st.session_state['use_ai_reply'] = False
+                            # Pre-fill with draft content
+                            st.session_state['draft_body'] = draft_body
                             st.rerun()
-                    with col2:
+                        
                         if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
                             st.session_state['drafts'].pop(idx)
-                            st.success("Draft deleted!")
+                            st.success("✅ Draft deleted!")
                             st.rerun()
+                
+                st.markdown("---")
 
 
 if __name__ == "__main__":
