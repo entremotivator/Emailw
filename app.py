@@ -439,7 +439,6 @@ def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlk
         
         df = pd.DataFrame(records)
         
-        # Ensure required columns exist
         required_columns = ['sender name', 'sender email', 'subject', 'summary', 'Date', 'Attachment', 'AIreply', 'department']
         for col in required_columns:
             if col not in df.columns:
@@ -448,26 +447,35 @@ def load_data_from_gsheet(credentials_dict, sheet_url="1DhqfIYM92gTdQ3yku233tLlk
         if 'drafts' not in st.session_state:
             st.session_state['drafts'] = []
         
-        # Clear existing drafts and reload from sheet
         st.session_state['drafts'] = []
         
+        drafts_loaded = 0
         for idx, row in df.iterrows():
-            if pd.notna(row.get('AIreply')) and str(row.get('AIreply', '')).strip():
+            ai_reply_value = row.get('AIreply', '')
+            
+            # Check if AIreply has content
+            if pd.notna(ai_reply_value) and str(ai_reply_value).strip() and str(ai_reply_value).strip().lower() != 'nan':
                 draft = {
                     'original_email': {
-                        'sender name': row.get('sender name', ''),
-                        'sender email': row.get('sender email', ''),
-                        'subject': row.get('subject', ''),
-                        'summary': row.get('summary', ''),
-                        'Date': row.get('Date', ''),
-                        'Attachment': row.get('Attachment', ''),
-                        'department': row.get('department', '')
+                        'sender name': str(row.get('sender name', '')),
+                        'sender email': str(row.get('sender email', '')),
+                        'subject': str(row.get('subject', '')),
+                        'summary': str(row.get('summary', '')),
+                        'Date': str(row.get('Date', '')),
+                        'Attachment': str(row.get('Attachment', '')),
+                        'department': str(row.get('department', ''))
                     },
-                    'body': row.get('AIreply', ''),
+                    'body': str(ai_reply_value),
                     'timestamp': datetime.now().isoformat(),
-                    'subject': f"Re: {row.get('subject', '')}"
+                    'subject': f"Re: {row.get('subject', 'No Subject')}"
                 }
                 st.session_state['drafts'].append(draft)
+                drafts_loaded += 1
+        
+        if drafts_loaded > 0:
+            st.success(f"✅ Loaded {drafts_loaded} draft(s) from Google Sheets AIreply column!")
+        else:
+            st.info("ℹ️ No drafts found in AIreply column. Add content to column G in your Google Sheet.")
         
         return df
     except Exception as e:
@@ -632,6 +640,7 @@ def display_email_card(email_data, index, credentials_dict=None):
             st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = False
+            st.session_state['draft_body'] = '' # Clear any existing draft body
             st.rerun()
     with col2:
         ai_button_label = "🤖 Use AI Reply" if has_ai_reply else "🤖 No AI Reply"
@@ -640,6 +649,7 @@ def display_email_card(email_data, index, credentials_dict=None):
             st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = True
+            st.session_state['draft_body'] = '' # Clear any existing draft body
             st.rerun()
     with col3:
         if st.button("⚡ Quick Reply", key=f"quick_{index}", use_container_width=True):
@@ -647,6 +657,7 @@ def display_email_card(email_data, index, credentials_dict=None):
             st.session_state['reply_to'] = dict(email_data)
             st.session_state['selected_template'] = "Quick Acknowledgment"
             st.session_state['use_ai_reply'] = False
+            st.session_state['draft_body'] = '' # Clear any existing draft body
             st.rerun()
     with col4:
         if st.button("📋 Save as Draft", key=f"draft_{index}", use_container_width=True):
@@ -715,6 +726,8 @@ def render_email_composer(email_data=None, template_name=None):
     use_ai_reply = st.session_state.get('use_ai_reply', False)
     ai_reply_content = email_data.get('AIreply', '') if has_email_data and use_ai_reply else ''
     
+    draft_body = st.session_state.get('draft_body', '')
+    
     if use_ai_reply and ai_reply_content:
         st.success("🤖 Using AI-generated reply from Google Sheets - Ready to send or edit!")
     
@@ -727,11 +740,16 @@ def render_email_composer(email_data=None, template_name=None):
             if st.button(f"📄 {template_name_btn.split()[0]}", key=f"template_{idx}", use_container_width=True):
                 st.session_state['selected_template'] = template_name_btn
                 st.session_state['use_ai_reply'] = False
+                st.session_state['draft_body'] = '' # Clear draft body when selecting new template
                 st.rerun()
     
     selected_template = st.session_state.get('selected_template', template_name)
     
-    if use_ai_reply and ai_reply_content:
+    if draft_body:
+        subject = f"Re: {email_data.get('subject', '')}" if has_email_data else "Draft Email"
+        body = draft_body
+        st.session_state['draft_body'] = ''  # Clear after loading
+    elif use_ai_reply and ai_reply_content:
         subject = f"Re: {email_data.get('subject', '')}"
         body = ai_reply_content
     elif selected_template and selected_template in EMAIL_TEMPLATES:
@@ -758,7 +776,7 @@ def render_email_composer(email_data=None, template_name=None):
     
     if editor_mode == "HTML Editor":
         st.markdown("**HTML Body:**")
-        email_body = st.text_area("", value=body, height=400, key="html_editor")
+        email_body = st.text_area("Email Body", value=body, height=400, key="html_editor", label_visibility="collapsed")
         
         with st.expander("👁️ Preview HTML", expanded=False):
             st.markdown('<div class="html-preview">', unsafe_allow_html=True)
@@ -771,7 +789,8 @@ def render_email_composer(email_data=None, template_name=None):
         plain_body = re.sub('<[^<]+?>', '', body) if body else ""
         plain_body = plain_body.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>')
         
-        email_body = st.text_area("", value=plain_body, height=350, key="plain_editor", 
+        email_body = st.text_area("Email Body", value=plain_body, height=350, key="plain_editor", 
+                                   label_visibility="collapsed",
                                    placeholder="Type your message here in plain text...")
         
         if email_body:
@@ -788,17 +807,20 @@ def render_email_composer(email_data=None, template_name=None):
                 st.session_state['composing_email'] = False
                 st.session_state['selected_template'] = None
                 st.session_state['use_ai_reply'] = False
-                st.session_state['reply_to'] = None
-                time.sleep(2)
+                if 'draft_body' in st.session_state:
+                    del st.session_state['draft_body']
+                st.session_state['reply_to'] = None # Clear reply context
                 st.rerun()
             else:
-                st.error("⚠️ Please fill in all fields")
+                st.error("⚠️ Please fill in all fields before sending.")
     
     with col2:
         if st.button("💾 Save Draft", use_container_width=True):
-            if has_email_data:
-                save_draft(email_data, email_body)
+            if has_email_data or email_to or email_subject or email_body: # Save even if no initial email data
+                save_draft(email_data if has_email_data else {}, email_body) # Pass original data or empty dict
                 st.success("✅ Draft saved!")
+            else:
+                st.warning("No content to save.")
     
     with col3:
         if st.button("🔄 Clear", use_container_width=True):
@@ -806,6 +828,8 @@ def render_email_composer(email_data=None, template_name=None):
             st.session_state['selected_template'] = None
             st.session_state['use_ai_reply'] = False
             st.session_state['reply_to'] = None
+            if 'draft_body' in st.session_state:
+                del st.session_state['draft_body']
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
@@ -837,6 +861,10 @@ def render_drafts():
                     st.session_state['composing_email'] = True
                     st.session_state['reply_to'] = original
                     st.session_state['editing_draft'] = idx
+                    # Load draft content into composer
+                    st.session_state['draft_body'] = draft['body']
+                    st.session_state['selected_template'] = None # Clear template selection
+                    st.session_state['use_ai_reply'] = False # Reset AI reply flag
                     st.rerun()
             with col2:
                 if st.button("🗑️ Delete", key=f"delete_draft_{idx}"):
@@ -961,6 +989,7 @@ def main():
                 st.session_state['reply_to'] = None
                 st.session_state['selected_template'] = None
                 st.session_state['use_ai_reply'] = False
+                st.session_state['draft_body'] = '' # Clear draft body for new email
                 st.rerun()
     
     with tab3:
@@ -1010,10 +1039,11 @@ def main():
                         if st.button("✏️ Edit", key=f"edit_draft_{idx}", use_container_width=True):
                             st.session_state['composing_email'] = True
                             st.session_state['reply_to'] = original
-                            st.session_state['selected_template'] = None
-                            st.session_state['use_ai_reply'] = False
-                            # Pre-fill with draft content
-                            st.session_state['draft_body'] = draft_body
+                            st.session_state['editing_draft'] = idx
+                            # Load draft content into composer
+                            st.session_state['draft_body'] = draft['body']
+                            st.session_state['selected_template'] = None # Clear template selection
+                            st.session_state['use_ai_reply'] = False # Reset AI reply flag
                             st.rerun()
                         
                         if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
