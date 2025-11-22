@@ -184,7 +184,7 @@ def fetch_emails(max_results=50):
         results = service.users().messages().list(
             userId='me',
             maxResults=max_results,
-            labelIds=['INBOX']
+            # labelIds=['INBOX'] # Removed to fix "Precondition check failed" error
         ).execute()
         
         messages = results.get('messages', [])
