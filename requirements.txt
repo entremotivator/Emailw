@@ -1,0 +1,12 @@
+streamlit>=1.51.0
+pandas>=2.3.3
+google-api-python-client>=2.187.0
+google-auth>=2.43.0
+google-auth-httplib2>=0.2.1
+google-auth-oauthlib>=1.2.2
+gspread>=6.2.1
+openai>=2.8.1
+python-dotenv>=1.2.1
+requests>=2.32.5
+openpyxl>=3.1.0
+xlrd>=2.0.1
