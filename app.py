@@ -295,32 +295,31 @@ st.sidebar.subheader("📝 Service Account JSON")
 st.sidebar.markdown("""
 <div style='background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 12px;'>
     <p style='margin: 0; color: white; font-size: 14px;'>
-        Paste your complete Google Service Account JSON credentials below. 
+        Upload your complete Google Service Account JSON file. 
         This file is required for Gmail API and Google Sheets integration.
+    </p>
+    <p style='margin: 8px 0 0 0; color: #FFD700; font-size: 13px;'>
+        💡 Get this file from: Google Cloud Console → IAM & Admin → Service Accounts → Keys
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-json_input = st.sidebar.text_area(
-    "JSON Credentials",
-    height=400,
-    placeholder='''{
-  "type": "service_account",
-  "project_id": "your-project-id",
-  "private_key_id": "your-private-key-id",
-  "private_key": "-----BEGIN PRIVATE KEY-----\\nYour-Private-Key-Here\\n-----END PRIVATE KEY-----\\n",
-  "client_email": "your-service-account@your-project.iam.gserviceaccount.com",
-  "client_id": "your-client-id",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
-}''',
-    help="Paste the entire JSON file content from your Google Cloud Service Account. Get it from Google Cloud Console → IAM & Admin → Service Accounts"
+uploaded_file = st.sidebar.file_uploader(
+    "Upload JSON Credentials File",
+    type=['json'],
+    help="Upload the JSON file from your Google Cloud Service Account"
 )
 
+json_input = None
+if uploaded_file is not None:
+    try:
+        json_input = uploaded_file.read().decode('utf-8')
+        st.sidebar.success(f"✅ File loaded: {uploaded_file.name}")
+    except Exception as e:
+        st.sidebar.error(f"❌ Error reading file: {str(e)}")
+
 if st.sidebar.button("🔐 Authenticate Services", use_container_width=True):
-    if json_input.strip():
+    if json_input:
         try:
             credentials_dict = json.loads(json_input)
             st.session_state.stored_credentials = credentials_dict
@@ -350,7 +349,7 @@ if st.sidebar.button("🔐 Authenticate Services", use_container_width=True):
         except Exception as e:
             st.sidebar.error(f"❌ Authentication error: {str(e)}")
     else:
-        st.sidebar.warning("⚠️ Please paste your JSON credentials first.")
+        st.sidebar.warning("⚠️ Please upload your JSON credentials file first.")
 
 st.sidebar.markdown("---")
 
@@ -873,4 +872,3 @@ st.markdown("""
     <p>🔐 Secure • 🤖 AI-Powered • 📊 Analytics-Driven</p>
 </div>
 """, unsafe_allow_html=True)
-
