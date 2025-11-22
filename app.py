@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import re
 import random
@@ -13,6 +13,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
+import plotly.express as px
+import plotly.graph_objects as go
 
 # ------------------------------
 # 🔧 CONFIGURATION
@@ -46,7 +48,6 @@ def load_custom_css():
         margin-bottom: 30px;
     }
     
-    /* <CHANGE> Fixed escape sequence warning by using raw string */
     .stat-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 25px;
@@ -72,6 +73,14 @@ def load_custom_css():
     
     .stat-card.orange {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    
+    .stat-card.blue {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+    
+    .stat-card.green {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
     }
     
     .stat-number {
@@ -275,18 +284,6 @@ def load_custom_css():
         font-weight: 600;
     }
     
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    /* Navigation buttons */
-    .nav-container {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 20px;
-    }
-    
     /* Horizontal menu */
     .horizontal-menu {
         background: white;
@@ -295,12 +292,35 @@ def load_custom_css():
         margin-bottom: 25px;
         box-shadow: 0 5px 20px rgba(0,0,0,0.1);
     }
+    
+    /* Analytics cards */
+    .analytics-card {
+        background: white;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        color: #000000;
+    }
+    
+    .contact-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 3px 15px rgba(0,0,0,0.08);
+        border-left: 4px solid #667eea;
+        transition: all 0.3s ease;
+    }
+    
+    .contact-card:hover {
+        transform: translateX(5px);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.12);
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# ------------------------------
-# 🔑 AUTHENTICATION FUNCTIONS
-# ------------------------------
+# ... existing code ...
 
 def get_gmail_credentials():
     """Get Gmail credentials from Streamlit secrets."""
@@ -325,9 +345,7 @@ def authenticate_gsheets(credentials_dict):
         st.error(f"Authentication failed: {str(e)}")
         return None
 
-# ------------------------------
-# 📊 DATA LOADING FUNCTIONS
-# ------------------------------
+# ... existing code ...
 
 def load_data_from_gsheet(gc, sheet_id=SHEET_ID):
     """Load data from Google Sheets."""
@@ -441,9 +459,7 @@ def generate_mock_data(num_emails=25):
     
     return pd.DataFrame(emails)
 
-# ------------------------------
-# 📧 EMAIL SENDING FUNCTIONS
-# ------------------------------
+# ... existing code ...
 
 def send_real_email(to_address, subject, body, cc_address=None, attachments=None, use_html=True):
     """Send a real email using Gmail SMTP."""
@@ -538,16 +554,19 @@ def save_to_sent_items(email_data, credentials_dict=None):
         st.error(f"Error saving sent email: {e}")
         return False
 
-# ------------------------------
-# 📊 UI RENDERING FUNCTIONS
-# ------------------------------
+# ... existing code ...
 
 def display_stats(df):
     """Display email statistics in colorful cards."""
     total_emails = len(df)
-    with_attachments = df[df['attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0]
-    high_priority = df[df['priority'] == 'high'].shape[0]
-    ai_replies_ready = df[df['aireply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))].shape[0]
+    # <CHANGE> Fixed the KeyError by safely checking column existence
+    with_attachments = df[df['attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0] if 'attachment' in df.columns else 0
+    high_priority = df[df['priority'] == 'high'].shape[0] if 'priority' in df.columns else 0
+    ai_replies_ready = df[df['aireply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))].shape[0] if 'aireply' in df.columns else 0
+    
+    # <CHANGE> Added more statistics
+    medium_priority = df[df['priority'] == 'medium'].shape[0] if 'priority' in df.columns else 0
+    low_priority = df[df['priority'] == 'low'].shape[0] if 'priority' in df.columns else 0
     
     st.markdown(f"""
     <div class="stats-container">
@@ -559,13 +578,21 @@ def display_stats(df):
             <div class="stat-number">{with_attachments}</div>
             <div class="stat-label">With Attachments</div>
         </div>
-        <div class="stat-card purple">
+        <div class="stat-card orange">
             <div class="stat-number">{high_priority}</div>
             <div class="stat-label">High Priority</div>
         </div>
-        <div class="stat-card orange">
+        <div class="stat-card purple">
             <div class="stat-number">{ai_replies_ready}</div>
             <div class="stat-label">AI Replies Ready</div>
+        </div>
+        <div class="stat-card blue">
+            <div class="stat-number">{medium_priority}</div>
+            <div class="stat-label">Medium Priority</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-number">{low_priority}</div>
+            <div class="stat-label">Low Priority</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -592,8 +619,8 @@ def display_email_card(email_data, index, credentials_dict=None):
     has_attachment = str(attachment).lower() in ["yes", "true", "1"]
     has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
     
-    attachment_tag = f'<span class="tag attachment">Attachment</span>' if has_attachment else f'<span class="tag no-attachment">No Attachment</span>'
-    ai_tag = f'<span class="tag ai">AI Suggestion</span>' if has_ai_reply else ''
+    attachment_tag = f'<span class="tag attachment">📎 Attachment</span>' if has_attachment else f'<span class="tag no-attachment">No Attachment</span>'
+    ai_tag = f'<span class="tag ai">🤖 AI Suggestion</span>' if has_ai_reply else ''
     
     ai_reply_preview = ""
     if has_ai_reply:
@@ -615,7 +642,7 @@ def display_email_card(email_data, index, credentials_dict=None):
         <div class="summary">{summary}</div>
         {ai_reply_preview}
         <div class="email-meta">
-            <div class="date">{formatted_date} | {department} | Priority: {priority.upper()}</div>
+            <div class="date">📅 {formatted_date} | 🏢 {department} | ⚡ Priority: {priority.upper()}</div>
             <div>{ai_tag} {attachment_tag}</div>
         </div>
     </div>
@@ -624,19 +651,19 @@ def display_email_card(email_data, index, credentials_dict=None):
     
     col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
-        if st.button("Reply", key=f"reply_{index}", use_container_width=True):
+        if st.button("✉️ Reply", key=f"reply_{index}", use_container_width=True):
             st.session_state['selected_email'] = email_data
             st.session_state['page'] = 'compose'
             st.session_state['use_ai_reply'] = False
             st.rerun()
     with col2:
-        if st.button("Use AI Reply", key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True, type="primary"):
+        if st.button("🤖 Use AI Reply", key=f"ai_reply_{index}", disabled=not has_ai_reply, use_container_width=True, type="primary"):
             st.session_state['selected_email'] = email_data
             st.session_state['page'] = 'compose'
             st.session_state['use_ai_reply'] = True
             st.rerun()
     with col3:
-        if st.button("Save as Draft", key=f"draft_{index}", use_container_width=True):
+        if st.button("💾 Save as Draft", key=f"draft_{index}", use_container_width=True):
             if 'drafts' not in st.session_state:
                 st.session_state['drafts'] = []
             
@@ -655,21 +682,23 @@ def display_email_card(email_data, index, credentials_dict=None):
             st.session_state['drafts'].append(draft)
             st.toast("Draft saved successfully!", icon="✅")
     with col4:
-        if st.button("Archive", key=f"archive_{index}", use_container_width=True):
+        if st.button("🗄️ Archive", key=f"archive_{index}", use_container_width=True):
             st.toast(f"Archived email from {sender_name}!", icon="✅")
     
     st.markdown("---")
 
+# ... existing code ...
+
 def render_compose(email_data=None):
     """Renders the compose page for replying to an email or drafting a new one."""
-    st.markdown("## Compose Email")
+    st.markdown("## ✍️ Compose Email")
     
     gmail_email, gmail_password = get_gmail_credentials()
     gmail_configured = bool(gmail_email and gmail_password)
     
     if not gmail_configured:
-        st.warning("Gmail not configured. Add credentials to .streamlit/secrets.toml to send real emails.")
-        with st.expander("How to configure Gmail"):
+        st.warning("⚠️ Gmail not configured. Add credentials to .streamlit/secrets.toml to send real emails.")
+        with st.expander("📖 How to configure Gmail"):
             st.markdown("""
             Create a file `.streamlit/secrets.toml` with:
             ```toml
@@ -681,7 +710,7 @@ def render_compose(email_data=None):
             **Note:** Use an [App Password](https://support.google.com/accounts/answer/185833) for Gmail, not your regular password.
             """)
     else:
-        st.success(f"Gmail configured: {gmail_email}")
+        st.success(f"✅ Gmail configured: {gmail_email}")
     
     if st.session_state.get('use_ai_reply') and email_data:
         initial_body = email_data.get('aireply', '')
@@ -694,7 +723,7 @@ def render_compose(email_data=None):
         reply_subject = f"Re: {email_data.get('subject', '')}"
         recipient = email_data.get('sender email', '')
         
-        with st.expander("View Original Email", expanded=False):
+        with st.expander("📧 View Original Email", expanded=False):
             st.markdown(f"**From:** {email_data.get('sender name', 'Unknown')} ({email_data.get('sender email', '')})")
             st.markdown(f"**Department:** {email_data.get('department', 'N/A')}")
             st.markdown(f"**Date:** {email_data.get('date', 'N/A')}")
@@ -734,7 +763,7 @@ def render_compose(email_data=None):
                 st.markdown("**Template Preview:**")
                 st.markdown(f"<div style='background: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #4CAF50; color: #000000;'>{initial_body}</div>", unsafe_allow_html=True)
     else:
-        st.info("Composing a new email.")
+        st.info("📝 Composing a new email.")
         reply_subject = ""
         recipient = ""
     
@@ -781,10 +810,10 @@ def render_compose(email_data=None):
         )
         
         if uploaded_files:
-            st.info(f"{len(uploaded_files)} file(s) attached: {', '.join([f.name for f in uploaded_files])}")
+            st.info(f"📎 {len(uploaded_files)} file(s) attached: {', '.join([f.name for f in uploaded_files])}")
         
         st.markdown("---")
-        st.markdown("### Email Preview")
+        st.markdown("### 👀 Email Preview")
         preview_container = st.container()
         with preview_container:
             st.markdown(f"**To:** {to_address or '[No recipient]'}")
@@ -801,13 +830,13 @@ def render_compose(email_data=None):
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            send_button = st.form_submit_button("Send Email", type="primary", use_container_width=True)
+            send_button = st.form_submit_button("📤 Send Email", type="primary", use_container_width=True)
         with col2:
-            save_draft_button = st.form_submit_button("Save Draft", use_container_width=True)
+            save_draft_button = st.form_submit_button("💾 Save Draft", use_container_width=True)
         with col3:
-            clear_button = st.form_submit_button("Clear", use_container_width=True)
+            clear_button = st.form_submit_button("🧹 Clear", use_container_width=True)
         with col4:
-            cancel_button = st.form_submit_button("Cancel", use_container_width=True)
+            cancel_button = st.form_submit_button("❌ Cancel", use_container_width=True)
         
         if send_button:
             if not to_address:
@@ -831,7 +860,7 @@ def render_compose(email_data=None):
                     )
                     
                     if success:
-                        st.success("Email sent successfully!")
+                        st.success("✅ Email sent successfully!")
                         
                         credentials_dict = st.session_state.get('credentials', None)
                         email_sent_data = {
@@ -876,7 +905,7 @@ def render_compose(email_data=None):
                     'original_email': email_data
                 }
                 st.session_state['drafts'].append(draft)
-                st.success("Draft saved successfully!")
+                st.success("✅ Draft saved successfully!")
                 time.sleep(1)
                 st.session_state['page'] = 'drafts'
                 st.rerun()
@@ -890,12 +919,12 @@ def render_compose(email_data=None):
 
 def render_drafts():
     """Renders the drafts page showing saved draft emails."""
-    st.markdown("## Drafts")
+    st.markdown("## 📝 Drafts")
     
     if 'drafts' not in st.session_state or len(st.session_state['drafts']) == 0:
-        st.info("No drafts saved yet. Compose an email and save it as a draft to see it here!")
+        st.info("📭 No drafts saved yet. Compose an email and save it as a draft to see it here!")
         
-        if st.button("Compose New Email"):
+        if st.button("✍️ Compose New Email"):
             st.session_state['page'] = 'compose'
             st.session_state['selected_email'] = None
             st.rerun()
@@ -939,7 +968,7 @@ def render_drafts():
         """
         st.markdown(draft_html, unsafe_allow_html=True)
         
-        with st.expander("View Full Draft"):
+        with st.expander("👁️ View Full Draft"):
             st.markdown(f"**To:** {draft.get('to_address', 'N/A')}")
             st.markdown(f"**CC:** {draft.get('cc_address', 'N/A')}")
             st.markdown(f"**Editor Mode:** {draft.get('editor_mode', 'Plain Text')}")
@@ -949,12 +978,12 @@ def render_drafts():
         
         col1, col2, col3 = st.columns([1, 1, 3])
         with col1:
-            if st.button("Edit", key=f"edit_draft_{idx}", use_container_width=True):
+            if st.button("✏️ Edit", key=f"edit_draft_{idx}", use_container_width=True):
                 st.session_state['selected_email'] = draft.get('original_email')
                 st.session_state['page'] = 'compose'
                 st.rerun()
         with col2:
-            if st.button("Delete", key=f"delete_draft_{idx}", use_container_width=True):
+            if st.button("🗑️ Delete", key=f"delete_draft_{idx}", use_container_width=True):
                 st.session_state['drafts'].pop(idx)
                 st.toast("Draft deleted!", icon="🗑️")
                 st.rerun()
@@ -963,10 +992,10 @@ def render_drafts():
 
 def render_sent():
     """Renders the sent items page."""
-    st.markdown("## Sent Items")
+    st.markdown("## 📤 Sent Items")
     
     if 'sent_items' not in st.session_state or len(st.session_state['sent_items']) == 0:
-        st.info("No sent items yet. Send an email to see it here!")
+        st.info("📭 No sent items yet. Send an email to see it here!")
         return
     
     st.success(f"You have sent **{len(st.session_state['sent_items'])}** email(s).")
@@ -977,76 +1006,349 @@ def render_sent():
 
 def render_inbox(df, credentials_dict=None):
     """Renders the inbox page with email cards and stats."""
-    st.markdown("## Inbox")
+    st.markdown("## 📨 Inbox")
     
     display_stats(df)
     
     st.markdown("---")
     
-    col1, col2, col3 = st.columns([2, 2, 4])
+    # <CHANGE> Enhanced filtering with search functionality
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
-        priority_filter = st.selectbox("Filter by Priority:", ["All", "High", "Medium", "Low"])
+        priority_filter = st.selectbox("🎯 Filter by Priority:", ["All", "High", "Medium", "Low"])
     with col2:
-        department_filter = st.selectbox("Filter by Department:", ["All"] + list(df['department'].unique()))
+        department_filter = st.selectbox("🏢 Filter by Department:", ["All"] + list(df['department'].unique()) if 'department' in df.columns else ["All"])
+    with col3:
+        attachment_filter = st.selectbox("📎 Attachments:", ["All", "With Attachments", "Without Attachments"])
+    with col4:
+        search_query = st.text_input("🔍 Search:", placeholder="Search sender or subject...")
     
     filtered_df = df.copy()
+    
+    # Apply filters
     if priority_filter != "All":
         filtered_df = filtered_df[filtered_df['priority'] == priority_filter.lower()]
-    if department_filter != "All":
+    if department_filter != "All" and 'department' in filtered_df.columns:
         filtered_df = filtered_df[filtered_df['department'] == department_filter]
+    if attachment_filter == "With Attachments":
+        filtered_df = filtered_df[filtered_df['attachment'].str.lower().isin(['yes', 'true', '1'])]
+    elif attachment_filter == "Without Attachments":
+        filtered_df = filtered_df[~filtered_df['attachment'].str.lower().isin(['yes', 'true', '1'])]
+    
+    # Apply search filter
+    if search_query:
+        filtered_df = filtered_df[
+            filtered_df['sender name'].str.contains(search_query, case=False, na=False) |
+            filtered_df['subject'].str.contains(search_query, case=False, na=False)
+        ]
     
     st.markdown(f"### {len(filtered_df)} Email(s)")
     
     if len(filtered_df) == 0:
-        st.info("No emails to display with the current filters.")
+        st.info("📭 No emails to display with the current filters.")
         return
     
     for idx, row in filtered_df.iterrows():
         display_email_card(row.to_dict(), idx, credentials_dict)
 
+# <CHANGE> Added new Analytics page
+def render_analytics(df):
+    """Renders the analytics dashboard with charts and insights."""
+    st.markdown("## 📊 Email Analytics Dashboard")
+    
+    st.markdown("Get insights into your email patterns, response times, and communication trends.")
+    st.markdown("---")
+    
+    # Time-based analysis
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+        st.markdown("### 📅 Emails Over Time")
+        
+        if 'date' in df.columns:
+            df_copy = df.copy()
+            df_copy['date'] = pd.to_datetime(df_copy['date'])
+            emails_by_date = df_copy.groupby(df_copy['date'].dt.date).size().reset_index(name='count')
+            
+            fig = px.line(emails_by_date, x='date', y='count', 
+                         title='Email Volume Trend',
+                         labels={'date': 'Date', 'count': 'Number of Emails'})
+            fig.update_traces(line_color='#667eea', line_width=3)
+            fig.update_layout(template='plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Date information not available")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+        st.markdown("### 🎯 Priority Distribution")
+        
+        if 'priority' in df.columns:
+            priority_counts = df['priority'].value_counts()
+            
+            fig = px.pie(values=priority_counts.values, names=priority_counts.index,
+                        title='Emails by Priority',
+                        color_discrete_sequence=['#f5576c', '#f093fb', '#38ef7d'])
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Priority information not available")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Department analysis
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+        st.markdown("### 🏢 Emails by Department")
+        
+        if 'department' in df.columns:
+            dept_counts = df['department'].value_counts().head(10)
+            
+            fig = px.bar(x=dept_counts.index, y=dept_counts.values,
+                        title='Top 10 Departments',
+                        labels={'x': 'Department', 'y': 'Email Count'},
+                        color=dept_counts.values,
+                        color_continuous_scale='Viridis')
+            fig.update_layout(template='plotly_white', showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Department information not available")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+        st.markdown("### 📎 Attachment Statistics")
+        
+        if 'attachment' in df.columns:
+            attachment_counts = df['attachment'].str.lower().isin(['yes', 'true', '1']).value_counts()
+            labels = ['With Attachments', 'Without Attachments']
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=labels,
+                values=[attachment_counts.get(True, 0), attachment_counts.get(False, 0)],
+                hole=.4,
+                marker_colors=['#11998e', '#e0e0e0']
+            )])
+            fig.update_layout(title='Attachment Distribution')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Attachment information not available")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # AI Reply analysis
+    st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+    st.markdown("### 🤖 AI Reply Coverage")
+    
+    col5, col6, col7 = st.columns(3)
+    
+    if 'aireply' in df.columns:
+        ai_replies = df[df['aireply'].apply(lambda x: bool(x and str(x).strip() not in ["", "nan", "None", "null"]))].shape[0]
+        ai_percentage = (ai_replies / len(df) * 100) if len(df) > 0 else 0
+        
+        with col5:
+            st.metric("AI Replies Available", ai_replies, f"{ai_percentage:.1f}%")
+        with col6:
+            st.metric("Pending Replies", len(df) - ai_replies)
+        with col7:
+            st.metric("Coverage Rate", f"{ai_percentage:.1f}%", "Good" if ai_percentage > 60 else "Needs Improvement")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Top senders
+    st.markdown('<div class="analytics-card">', unsafe_allow_html=True)
+    st.markdown("### 👥 Top Email Senders")
+    
+    if 'sender name' in df.columns:
+        top_senders = df['sender name'].value_counts().head(10)
+        
+        fig = px.bar(x=top_senders.values, y=top_senders.index,
+                    orientation='h',
+                    title='Top 10 Email Senders',
+                    labels={'x': 'Number of Emails', 'y': 'Sender'},
+                    color=top_senders.values,
+                    color_continuous_scale='Blues')
+        fig.update_layout(template='plotly_white', showlegend=False, height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Sender information not available")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# <CHANGE> Added new Contacts page
+def render_contacts(df):
+    """Renders the contacts management page."""
+    st.markdown("## 👥 Contacts Management")
+    
+    st.markdown("Manage and organize your email contacts.")
+    st.markdown("---")
+    
+    if 'sender name' not in df.columns or 'sender email' not in df.columns:
+        st.error("Contact information not available in the dataset")
+        return
+    
+    # Extract unique contacts
+    contacts = df[['sender name', 'sender email']].drop_duplicates()
+    contacts = contacts.sort_values('sender name')
+    
+    st.success(f"📇 You have **{len(contacts)}** unique contacts")
+    
+    # Search contacts
+    search = st.text_input("🔍 Search contacts:", placeholder="Search by name or email...")
+    
+    if search:
+        contacts = contacts[
+            contacts['sender name'].str.contains(search, case=False, na=False) |
+            contacts['sender email'].str.contains(search, case=False, na=False)
+        ]
+    
+    st.markdown(f"### Showing {len(contacts)} contact(s)")
+    st.markdown("---")
+    
+    # Display contacts
+    for idx, row in contacts.iterrows():
+        name = row['sender name']
+        email = row['sender email']
+        initials = get_initials(name)
+        
+        # Count emails from this contact
+        email_count = len(df[df['sender email'] == email])
+        
+        # Get department if available
+        dept = df[df['sender email'] == email]['department'].mode()[0] if 'department' in df.columns else 'N/A'
+        
+        contact_html = f"""
+        <div class="contact-card">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="sender-avatar">{initials}</div>
+                <div style="flex: 1;">
+                    <div style="font-size: 18px; font-weight: 700; color: #000000;">{name}</div>
+                    <div style="font-size: 14px; color: #666; margin: 5px 0;">✉️ {email}</div>
+                    <div style="font-size: 13px; color: #888;">🏢 {dept} | 📧 {email_count} email(s)</div>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(contact_html, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button(f"✉️ Email", key=f"email_{idx}", use_container_width=True):
+                st.session_state['page'] = 'compose'
+                st.session_state['selected_email'] = {'sender name': name, 'sender email': email}
+                st.rerun()
+
 def render_settings():
     """Renders the settings page."""
-    st.markdown("## Settings")
+    st.markdown("## ⚙️ Settings")
     
-    st.markdown("### Gmail SMTP Configuration")
-    st.info("Configure your Gmail credentials in `.streamlit/secrets.toml` to send real emails.")
+    st.markdown("Configure your InboxKeep Pro preferences and integrations.")
+    st.markdown("---")
     
-    gmail_email, gmail_password = get_gmail_credentials()
-    if gmail_email:
-        st.success(f"Gmail configured: {gmail_email}")
-    else:
-        st.warning("Gmail not configured")
-    
-    with st.expander("How to configure Gmail"):
-        st.markdown("""
-        Create a file `.streamlit/secrets.toml` with:
-        ```toml
-        [gmail]
-        email = "your-email@gmail.com"
-        password = "your-app-password"
-        ```
+    # Gmail settings
+    st.markdown("### 📧 Gmail Configuration")
+    with st.expander("Gmail SMTP Settings", expanded=True):
+        gmail_email, gmail_password = get_gmail_credentials()
         
-        **Note:** Use an [App Password](https://support.google.com/accounts/answer/185833) for Gmail, not your regular password.
-        """)
+        if gmail_email and gmail_password:
+            st.success(f"✅ Gmail configured: {gmail_email}")
+            st.info("To update credentials, edit your `.streamlit/secrets.toml` file")
+        else:
+            st.warning("⚠️ Gmail not configured")
+            st.markdown("""
+            Create a file `.streamlit/secrets.toml` with:
+            ```toml
+            [gmail]
+            email = "your-email@gmail.com"
+            password = "your-app-password"
+            ```
+            
+            **Note:** Use an [App Password](https://support.google.com/accounts/answer/185833) for Gmail, not your regular password.
+            """)
     
     st.markdown("---")
-    st.markdown("### Google Sheets Configuration")
-    st.info(f"Current Sheet ID: `{SHEET_ID}`")
+    
+    # Google Sheets settings
+    st.markdown("### 📊 Google Sheets Integration")
+    with st.expander("Sheet Configuration", expanded=True):
+        credentials_dict = st.session_state.get('credentials', None)
+        
+        if credentials_dict:
+            st.success("✅ Google Sheets credentials loaded")
+            if 'client_email' in credentials_dict:
+                st.info(f"Service Account: {credentials_dict['client_email']}")
+            st.markdown(f"**Sheet ID:** `{SHEET_ID}`")
+        else:
+            st.warning("⚠️ No Google Sheets credentials loaded")
+            st.info("Upload your Service Account JSON in the sidebar to connect")
     
     st.markdown("---")
-    st.markdown("### App Information")
-    st.write(f"**Version:** 2.0.0")
-    st.write(f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d')}")
+    
+    # Display preferences
+    st.markdown("### 🎨 Display Preferences")
+    with st.expander("Customize Your Experience", expanded=True):
+        st.markdown("Coming soon: Theme customization, notification preferences, and more!")
+        
+        # Placeholder for future settings
+        st.checkbox("Enable desktop notifications", value=False, disabled=True)
+        st.checkbox("Dark mode", value=False, disabled=True)
+        st.selectbox("Emails per page", [10, 25, 50, 100], index=1, disabled=True)
+    
+    st.markdown("---")
+    
+    # Data management
+    st.markdown("### 🗄️ Data Management")
+    with st.expander("Manage Your Data", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 Refresh Data", use_container_width=True):
+                credentials_dict = st.session_state.get('credentials', None)
+                if credentials_dict:
+                    gc = authenticate_gsheets(credentials_dict)
+                    if gc:
+                        st.session_state['df'] = load_data_from_gsheet(gc, SHEET_ID)
+                        st.success("Data refreshed!")
+                        st.rerun()
+                else:
+                    st.error("No credentials available")
+        
+        with col2:
+            if st.button("🗑️ Clear Drafts", use_container_width=True):
+                st.session_state['drafts'] = []
+                st.success("Drafts cleared!")
+                st.rerun()
+        
+        with col3:
+            if st.button("📥 Export Data", use_container_width=True, disabled=True):
+                st.info("Export feature coming soon!")
+    
+    st.markdown("---")
+    
+    # About
+    st.markdown("### ℹ️ About InboxKeep Pro")
+    st.markdown("""
+    **Version:** 2.0 Enhanced
+    
+    **Features:**
+    - 📨 Advanced email management with AI-powered suggestions
+    - 📊 Comprehensive analytics and insights
+    - 👥 Contact management system
+    - 📝 Draft management with templates
+    - 🔄 Google Sheets integration
+    - 📤 Real email sending via Gmail SMTP
+    
+    **Created with:** Streamlit, Pandas, Plotly, gspread
+    """)
 
-# ------------------------------
-# 🎯 MAIN APPLICATION
-# ------------------------------
+# ... existing code ...
 
 def main():
     """Main application function for InboxKeep Pro."""
     
     st.set_page_config(
-        page_title="InboxKeep Pro",
+        page_title="InboxKeep Pro - Advanced Email Management",
         page_icon="📧",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -1072,7 +1374,7 @@ def main():
     
     # Sidebar for credentials
     with st.sidebar:
-        st.markdown("## Service Account JSON")
+        st.markdown("## 🔐 Service Account JSON")
         st.markdown("Upload your Google Service Account JSON credentials to connect to Google Sheets and enable full functionality.")
         
         uploaded_json_file = st.file_uploader(
@@ -1086,14 +1388,14 @@ def main():
                 credentials_dict = json.load(uploaded_json_file)
                 st.session_state['credentials'] = credentials_dict
                 
-                st.success("Credentials loaded successfully!")
+                st.success("✅ Credentials loaded successfully!")
                 
                 if 'client_email' in credentials_dict:
                     st.info(f"Service Account: {credentials_dict['client_email']}")
                 
                 gc = authenticate_gsheets(credentials_dict)
                 if gc:
-                    st.success("Connected to Google Sheets!")
+                    st.success("✅ Connected to Google Sheets!")
                     
                     with st.spinner("Loading data from Google Sheets..."):
                         st.session_state['df'] = load_data_from_gsheet(gc, SHEET_ID)
@@ -1106,41 +1408,50 @@ def main():
             except Exception as e:
                 st.error(f"Error processing credentials: {str(e)}")
         else:
-            st.info("No credentials loaded. Using mock data for demonstration.")
+            st.info("📝 No credentials loaded. Using mock data for demonstration.")
         
         st.markdown("---")
-        st.markdown("### Quick Stats")
-        st.metric("Drafts", len(st.session_state.get('drafts', [])))
-        st.metric("Sent Items", len(st.session_state.get('sent_items', [])))
+        st.markdown("### 📊 Quick Stats")
+        st.metric("💾 Drafts", len(st.session_state.get('drafts', [])))
+        st.metric("📤 Sent Items", len(st.session_state.get('sent_items', [])))
+        st.metric("📧 Total Emails", len(st.session_state.get('df', [])))
     
     # Main content
-    st.title("InboxKeep Pro: Email Management Dashboard")
-    st.markdown("A comprehensive email management application with AI-powered suggestions and Google Sheets integration.")
+    st.title("📧 InboxKeep Pro: Advanced Email Management")
+    st.markdown("A comprehensive email management application with AI-powered suggestions, analytics, and Google Sheets integration.")
     st.markdown("---")
     
-    # Horizontal navigation
+    # <CHANGE> Enhanced horizontal navigation with icons and Analytics + Contacts pages
     st.markdown('<div class="horizontal-menu">', unsafe_allow_html=True)
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
-        if st.button("Inbox", use_container_width=True, type="primary" if st.session_state['page'] == 'inbox' else "secondary"):
+        if st.button("📨 Inbox", use_container_width=True, type="primary" if st.session_state['page'] == 'inbox' else "secondary"):
             st.session_state['page'] = 'inbox'
             st.session_state['selected_email'] = None
             st.rerun()
     with col2:
-        if st.button("Compose", use_container_width=True, type="primary" if st.session_state['page'] == 'compose' else "secondary"):
+        if st.button("✍️ Compose", use_container_width=True, type="primary" if st.session_state['page'] == 'compose' else "secondary"):
             st.session_state['page'] = 'compose'
             st.session_state['selected_email'] = None
             st.rerun()
     with col3:
-        if st.button("Drafts", use_container_width=True, type="primary" if st.session_state['page'] == 'drafts' else "secondary"):
+        if st.button("📝 Drafts", use_container_width=True, type="primary" if st.session_state['page'] == 'drafts' else "secondary"):
             st.session_state['page'] = 'drafts'
             st.rerun()
     with col4:
-        if st.button("Sent", use_container_width=True, type="primary" if st.session_state['page'] == 'sent' else "secondary"):
+        if st.button("📤 Sent", use_container_width=True, type="primary" if st.session_state['page'] == 'sent' else "secondary"):
             st.session_state['page'] = 'sent'
             st.rerun()
     with col5:
-        if st.button("Settings", use_container_width=True, type="primary" if st.session_state['page'] == 'settings' else "secondary"):
+        if st.button("📊 Analytics", use_container_width=True, type="primary" if st.session_state['page'] == 'analytics' else "secondary"):
+            st.session_state['page'] = 'analytics'
+            st.rerun()
+    with col6:
+        if st.button("👥 Contacts", use_container_width=True, type="primary" if st.session_state['page'] == 'contacts' else "secondary"):
+            st.session_state['page'] = 'contacts'
+            st.rerun()
+    with col7:
+        if st.button("⚙️ Settings", use_container_width=True, type="primary" if st.session_state['page'] == 'settings' else "secondary"):
             st.session_state['page'] = 'settings'
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1158,6 +1469,10 @@ def main():
         render_drafts()
     elif st.session_state['page'] == 'sent':
         render_sent()
+    elif st.session_state['page'] == 'analytics':
+        render_analytics(st.session_state['df'])
+    elif st.session_state['page'] == 'contacts':
+        render_contacts(st.session_state['df'])
     elif st.session_state['page'] == 'settings':
         render_settings()
 
