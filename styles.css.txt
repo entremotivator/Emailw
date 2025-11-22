@@ -1,0 +1,172 @@
+/* InboxKeep - Colorful Card UI Styles */
+
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 1.5rem;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: white;
+  transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.teal {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+
+.stat-card.purple {
+  background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%);
+}
+
+.stat-card.orange {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.95rem;
+  opacity: 0.95;
+}
+
+.email-card {
+  background: white;
+  border-left: 4px solid #667eea;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+}
+
+.email-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateX(4px);
+}
+
+.email-card.priority-high {
+  border-left-color: #f5576c;
+  background: #fff5f7;
+}
+
+.email-card.priority-medium {
+  border-left-color: #f093fb;
+}
+
+.email-card.priority-low {
+  border-left-color: #38ef7d;
+}
+
+.sender-info {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.sender-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.2rem;
+  margin-right: 1rem;
+}
+
+.sender-details {
+  flex: 1;
+}
+
+.sender-name {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #2d3748;
+}
+
+.sender-email {
+  font-size: 0.9rem;
+  color: #718096;
+}
+
+.subject {
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: #1a202c;
+  margin-bottom: 0.5rem;
+}
+
+.summary {
+  color: #4a5568;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.ai-reply-preview {
+  background: #f0f9ff;
+  border-left: 3px solid #3b82f6;
+  padding: 0.75rem;
+  margin: 1rem 0;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #1e40af;
+}
+
+.email-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.date {
+  font-size: 0.9rem;
+  color: #718096;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-right: 0.5rem;
+}
+
+.tag.attachment {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tag.no-attachment {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.tag.ai {
+  background: #dbeafe;
+  color: #1e40af;
+}
