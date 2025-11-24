@@ -1257,7 +1257,7 @@ password = "your_app_password"
         st.markdown("For security, you must use a **Gmail App Password** instead of your regular password. You can generate one in your Google Account security settings.")
     
     # --- End of render_settings ---
-    pass}
+    pass
     
     # Find the original render_settings function definition and replace it
     # I'll search for the function definition and replace the entire block.
