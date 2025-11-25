@@ -1686,19 +1686,19 @@ def main():
     if 'page' not in st.session_state:
         st.session_state['page'] = 'inbox'
     if 'df' not in st.session_state:
-    # Try to load data from GSheets if credentials are in session state
-    gsheets_creds = st.session_state.get('gsheets_credentials')
-    if gsheets_creds:
-        gc = authenticate_gsheets(gsheets_creds)
-        if gc:
-            st.session_state['df'] = load_data_from_gsheet(gc)
-            st.info("Data loaded from Google Sheets.")
+        # Try to load data from GSheets if credentials are in session state
+        gsheets_creds = st.session_state.get('gsheets_credentials')
+        if gsheets_creds:
+            gc = authenticate_gsheets(gsheets_creds)
+            if gc:
+                st.session_state['df'] = load_data_from_gsheet(gc)
+                st.info("Data loaded from Google Sheets.")
+            else:
+                st.session_state['df'] = generate_mock_data(num_emails=50)
+                st.warning("Could not authenticate GSheets. Using mock data.")
         else:
             st.session_state['df'] = generate_mock_data(num_emails=50)
-            st.warning("Could not authenticate GSheets. Using mock data.")
-    else:
-        st.session_state['df'] = generate_mock_data(num_emails=50)
-        st.info("Using mock data. Upload Google Sheets credentials in the sidebar to load real data.")
+            st.info("Using mock data. Upload Google Sheets credentials in the sidebar to load real data.")
     if 'sent_items' not in st.session_state:
         st.session_state['sent_items'] = []
     if 'drafts' not in st.session_state:
