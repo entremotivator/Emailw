@@ -1194,39 +1194,6 @@ def render_settings(accounts):
     st.markdown("Configure your InboxKeep Pro preferences and integrations.")
     st.markdown("---")
     
-    # --- Google Sheets Configuration ---
-    st.markdown("### ☁️ Google Sheets Configuration")
-    
-    gsheets_file = st.file_uploader("Upload Google Sheets Service Account JSON", type="json")
-    
-    if gsheets_file is not None:
-        try:
-            # Read the uploaded file
-            gsheets_credentials = json.load(gsheets_file)
-            
-            # Store in session state
-            st.session_state['gsheets_credentials'] = gsheets_credentials
-            st.success("✅ Google Sheets credentials uploaded and saved for this session.")
-            
-            # Optionally, try to authenticate immediately
-            gc = authenticate_gsheets(gsheets_credentials)
-            if gc:
-                st.success("✅ Successfully authenticated with Google Sheets!")
-            else:
-                st.error("❌ Authentication failed with the provided JSON file.")
-                
-        except json.JSONDecodeError:
-            st.error("Invalid JSON file. Please upload a valid Google Sheets Service Account JSON.")
-        except Exception as e:
-            st.error(f"An error occurred during file processing: {e}")
-    
-    if 'gsheets_credentials' in st.session_state:
-        st.info("Current Google Sheets credentials are set from the uploaded file.")
-    else:
-        st.warning("No Google Sheets credentials set. Data will be loaded from mock data.")
-    
-    st.markdown("---")
-    
     # --- Gmail Configuration ---
     st.markdown("### 📧 Gmail Configuration")
     
@@ -1719,19 +1686,19 @@ def main():
     if 'page' not in st.session_state:
         st.session_state['page'] = 'inbox'
     if 'df' not in st.session_state:
-        # Try to load data from GSheets if credentials are in session state
-        gsheets_creds = st.session_state.get('gsheets_credentials')
-        if gsheets_creds:
-            gc = authenticate_gsheets(gsheets_creds)
-            if gc:
-                st.session_state['df'] = load_data_from_gsheet(gc)
-                st.info("Data loaded from Google Sheets.")
-            else:
-                st.session_state['df'] = generate_mock_data(num_emails=50)
-                st.warning("Could not authenticate GSheets. Using mock data.")
+    # Try to load data from GSheets if credentials are in session state
+    gsheets_creds = st.session_state.get('gsheets_credentials')
+    if gsheets_creds:
+        gc = authenticate_gsheets(gsheets_creds)
+        if gc:
+            st.session_state['df'] = load_data_from_gsheet(gc)
+            st.info("Data loaded from Google Sheets.")
         else:
             st.session_state['df'] = generate_mock_data(num_emails=50)
-            st.info("Using mock data. Upload Google Sheets credentials in Settings to load real data.")
+            st.warning("Could not authenticate GSheets. Using mock data.")
+    else:
+        st.session_state['df'] = generate_mock_data(num_emails=50)
+        st.info("Using mock data. Upload Google Sheets credentials in the sidebar to load real data.")
     if 'sent_items' not in st.session_state:
         st.session_state['sent_items'] = []
     if 'drafts' not in st.session_state:
@@ -1744,6 +1711,31 @@ def main():
     
     # 2. Sidebar Navigation
     st.sidebar.title("InboxKeep Pro")
+    st.sidebar.markdown("---")
+    
+    # --- GSheets Upload in Sidebar ---
+    st.sidebar.markdown("### ☁️ GSheets Config")
+    gsheets_file = st.sidebar.file_uploader("Upload Service Account JSON", type="json")
+    
+    if gsheets_file is not None:
+        try:
+            # Read the uploaded file
+            gsheets_credentials = json.load(gsheets_file)
+            
+            # Store in session state
+            st.session_state['gsheets_credentials'] = gsheets_credentials
+            st.sidebar.success("✅ Credentials uploaded. Rerun to load data.")
+            
+        except json.JSONDecodeError:
+            st.sidebar.error("Invalid JSON file.")
+        except Exception as e:
+            st.sidebar.error(f"Error: {e}")
+            
+    if 'gsheets_credentials' in st.session_state:
+        st.sidebar.info("GSheets credentials loaded.")
+    else:
+        st.sidebar.warning("No GSheets credentials set.")
+        
     st.sidebar.markdown("---")
     
     # Navigation buttons
