@@ -7,6 +7,7 @@ from datetime import datetime
 import time
 import re
 import random
+import smtplib
 
 # ------------------------------
 # 🔧 PAGE CONFIGURATION
@@ -231,7 +232,7 @@ CUSTOM_CSS = """
         font-size: 16px;
     }
 
-    /* IMPROVED DRAFT / SENT CARD */
+    /* DRAFT / SENT CARD */
     .draft-card {
         background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
         border: 3px solid #eab308;
@@ -324,12 +325,29 @@ CUSTOM_CSS = """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ------------------------------
-# 📊 GOOGLE SHEETS INTEGRATION
+# 📊 SHEETS + SECRETS
 # ------------------------------
 SHEET_ID = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
 
+# Optional Gmail config via .streamlit/secrets.toml
+GMAIL_EMAIL = st.secrets.gmail.email if "gmail" in st.secrets else None
+GMAIL_PASSWORD = st.secrets.gmail.password if "gmail" in st.secrets else None
+
+def send_mail_smtp(to_address, subject, body):
+    if not GMAIL_EMAIL or not GMAIL_PASSWORD:
+        st.warning("Gmail credentials not configured in secrets.toml.")
+        return False
+    msg = f"From: {GMAIL_EMAIL}\nTo: {to_address}\nSubject: {subject}\n\n{body}"
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(GMAIL_EMAIL, GMAIL_PASSWORD)
+            server.sendmail(GMAIL_EMAIL, [to_address], msg)
+        return True
+    except Exception as e:
+        st.error(f"Error sending email: {e}")
+        return False
+
 def load_data_from_gsheet(credentials_dict):
-    """Load data from Google Sheet using provided credentials."""
     try:
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -342,10 +360,8 @@ def load_data_from_gsheet(credentials_dict):
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Normalize column names
         df.columns = [col.lower().replace(' ', '') for col in df.columns]
         
-        # Ensure required columns exist with proper names
         column_mapping = {
             'sendername': 'sender name',
             'senderemail': 'sender email',
@@ -357,16 +373,12 @@ def load_data_from_gsheet(credentials_dict):
             if old_col in df.columns:
                 df.rename(columns={old_col: new_col}, inplace=True)
         
-        # Add missing columns with defaults
         if 'priority' not in df.columns:
             df['priority'] = 'medium'
-        
         if 'aireply' not in df.columns:
             df['aireply'] = ''
-            
         if 'department' not in df.columns:
             df['department'] = 'General'
-        
         if 'attachment' not in df.columns:
             df['attachment'] = 'No'
         
@@ -379,7 +391,6 @@ def load_data_from_gsheet(credentials_dict):
         return generate_mock_data(num_emails=25)
 
 def save_draft(email_data, body, credentials_dict):
-    """Save email draft body to the AIreply column in the Google Sheet (mock: session only)."""
     try:
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -409,7 +420,6 @@ def save_draft(email_data, body, credentials_dict):
 # 📝 MOCK DATA GENERATION
 # ------------------------------
 def get_initials(name):
-    """Extract initials from sender name."""
     if not name or name == "Unknown Sender":
         return "?"
     parts = name.strip().split()
@@ -418,7 +428,6 @@ def get_initials(name):
     return name[0].upper() if name else "?"
 
 def generate_mock_data(num_emails=25):
-    """Generates a longer list of mock email data matching Google Sheets structure."""
     mock_senders = [
         ("Custom All Stars", "customallstars@gmail.com", "Community"),
         ("Blogz Team", "info@blogz.life", "Community"),
@@ -529,7 +538,6 @@ def generate_mock_data(num_emails=25):
     emails = example_emails.copy()
     priorities = ["high", "medium", "low"]
     
-    # Generate additional emails
     for i in range(num_emails - len(example_emails)):
         sender_name, sender_email, department = random.choice(mock_senders)
         subject = mock_subjects[i % len(mock_subjects)]
@@ -565,7 +573,6 @@ def generate_mock_data(num_emails=25):
 # 📊 UI RENDERING FUNCTIONS
 # ------------------------------
 def display_stats(df):
-    """Display email statistics in colorful cards."""
     total_emails = len(df)
     with_attachments = df[df['attachment'].str.lower().isin(['yes', 'true', '1'])].shape[0]
     high_priority = df[df['priority'] == 'high'].shape[0]
@@ -593,7 +600,6 @@ def display_stats(df):
     """, unsafe_allow_html=True)
 
 def display_email_card(email_data, index, credentials_dict=None):
-    """Render one email entry as a colorful card with action buttons."""
     sender_name = email_data.get("sender name", "Unknown Sender")
     sender_email = email_data.get("sender email", "")
     subject = email_data.get("subject", "No Subject")
@@ -680,10 +686,8 @@ def display_email_card(email_data, index, credentials_dict=None):
     st.markdown("---")
 
 def render_compose(email_data=None):
-    """Renders the compose page for replying to an email or drafting a new one."""
     st.markdown("## ✉️ Compose Email")
 
-    # Check if coming from Sent (Re-send preset)
     preset = st.session_state.pop("compose_preset", None)
 
     if preset is not None:
@@ -808,7 +812,6 @@ def render_compose(email_data=None):
         
         if send_button:
             if to_address and subject and body:
-                # Log sent email in session_state
                 if 'sent_emails' not in st.session_state:
                     st.session_state['sent_emails'] = []
                 attachments_list = [file.name for file in uploaded_files] if uploaded_files else []
@@ -824,7 +827,16 @@ def render_compose(email_data=None):
                 }
                 st.session_state['sent_emails'].append(sent_record)
 
-                st.success(f"✅ Email sent successfully to {to_address}!")
+                # Optional real send via Gmail secrets
+                if GMAIL_EMAIL and GMAIL_PASSWORD:
+                    ok = send_mail_smtp(to_address, subject, body if editor_mode == "Plain Text" else re.sub('<[^<]+?>', '', body))
+                    if ok:
+                        st.success(f"✅ Email sent via Gmail to {to_address}!")
+                    else:
+                        st.warning("Logged to Sent, but Gmail send failed.")
+                else:
+                    st.success(f"✅ Email logged as sent to {to_address} (no SMTP configured).")
+
                 st.balloons()
                 time.sleep(1)
                 st.session_state['page'] = 'inbox'
@@ -869,7 +881,6 @@ def render_compose(email_data=None):
             """, unsafe_allow_html=True)
 
 def render_drafts():
-    """Renders the drafts page showing saved draft emails."""
     st.markdown("## 📋 Drafts")
     
     if 'drafts' not in st.session_state or len(st.session_state['drafts']) == 0:
@@ -894,7 +905,7 @@ def render_drafts():
         
         try:
             dt = datetime.fromisoformat(timestamp)
-            formatted_timestamp = dt.strftime("%B %d, %Y at %I:%M %p")
+            formatted_timestamp = dt.strftime("%B %d,  %Y at %I:%M %p")
         except Exception:
             formatted_timestamp = timestamp
         
@@ -947,7 +958,6 @@ def render_drafts():
         st.markdown("---")
 
 def render_sent():
-    """Render the Sent Center page listing all sent emails with actions."""
     st.markdown("## 📤 Sent Emails")
 
     if 'sent_emails' not in st.session_state or len(st.session_state['sent_emails']) == 0:
@@ -1039,7 +1049,6 @@ def render_sent():
         st.markdown("---")
 
 def render_inbox(df, credentials_dict=None):
-    """Renders the inbox page with email cards and stats."""
     st.markdown("## 📥 Inbox")
     
     display_stats(df)
@@ -1058,8 +1067,6 @@ def render_inbox(df, credentials_dict=None):
 # 🎯 MAIN APPLICATION
 # ------------------------------
 def main():
-    """Main application function for the single-page Streamlit app."""
-    
     if 'page' not in st.session_state:
         st.session_state['page'] = 'inbox'
     if 'selected_email' not in st.session_state:
@@ -1112,7 +1119,7 @@ def main():
                 📄 Upload your Service Account JSON file
             </p>
             <p style='margin: 8px 0 0 0; color: #1e40af; font-size: 13px;'>
-                This file enables Gmail API and Google Sheets access. Get it from:
+                This file enables Google Sheets access. Get it from:
             </p>
             <p style='margin: 4px 0 0 0; color: #3b82f6; font-size: 12px;'>
                 ☁️ Google Cloud Console → IAM & Admin → Service Accounts → Keys
@@ -1216,3 +1223,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
