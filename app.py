@@ -878,7 +878,7 @@ def render_compose(email_data=None):
                     # Clear form and state
                     time.sleep(1)
                     st.session_state['page'] = 'inbox'
-                    st.session_state['selected_email'] = None
+            st.session_state['selected_email'] = None
                     st.session_state['use_ai_reply'] = False
                     st.rerun()
                 else:
@@ -1082,19 +1082,19 @@ def main():
             st.session_state['selected_email'] = None
             st.rerun()
 	    with col2:
-	        if st.button("✉️ Compose", use_container_width=True, type="primary" if st.session_state['page'] == 'compose' else "secondary"):
+        if st.button("✉️ Compose", use_container_width=True, type="primary" if st.session_state['page'] == 'compose' else "secondary"):
 	            st.session_state['page'] = 'compose'
 	            st.session_state['selected_email'] = None
 	            st.rerun()
 	    with col3:
-	        drafts_count = len(st.session_state.get('drafts', []))
-	        if st.button(f"📋 Drafts ({drafts_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'drafts' else "secondary"):
+        drafts_count = len(st.session_state.get('drafts', []))
+        if st.button(f"📋 Drafts ({drafts_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'drafts' else "secondary"):
 	            st.session_state['page'] = 'drafts'
 	            st.rerun()
 	    with col4:
-	        sent_count = len(st.session_state.get('sent_emails', []))
-	        if st.button(f"📊 Sent ({sent_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'tracking' else "secondary"):
-	            st.session_state['page'] = 'tracking'
+        sent_count = len(st.session_state.get('sent_emails', []))
+        if st.button(f"📊 Sent ({sent_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'tracking' else "secondary"):
+            st.session_state['page'] = 'tracking'
 	            st.rerun()
     
     st.markdown("---")
