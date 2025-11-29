@@ -1,9 +1,4 @@
 import streamlit as st
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
-import os
 import json
 import pandas as pd
 import gspread
@@ -236,7 +231,7 @@ CUSTOM_CSS = """
         font-size: 16px;
     }
 
-    /* IMPROVED DRAFT CARD - Focus on Draft Content Only */
+    /* IMPROVED DRAFT / SENT CARD */
     .draft-card {
         background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
         border: 3px solid #eab308;
@@ -261,13 +256,16 @@ CUSTOM_CSS = """
         letter-spacing: 1px;
         box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
     }
+    .draft-card.sent::before {
+        content: '📤 SENT';
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    }
     .draft-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 12px 32px rgba(234, 179, 8, 0.5);
         border-color: #ca8a04;
     }
     
-    /* Draft timestamp badge */
     .draft-timestamp {
         background: rgba(0, 0, 0, 0.1);
         padding: 8px 16px;
@@ -279,7 +277,6 @@ CUSTOM_CSS = """
         margin-bottom: 20px;
     }
     
-    /* Draft subject - Large and prominent */
     .draft-subject {
         font-size: 32px;
         font-weight: 900;
@@ -289,7 +286,6 @@ CUSTOM_CSS = """
         padding-right: 120px;
     }
     
-    /* Draft body display - Clean card with good spacing */
     .draft-body-container {
         background: white;
         border-radius: 16px;
@@ -313,7 +309,6 @@ CUSTOM_CSS = """
         line-height: 1.8;
     }
     
-    /* Draft metadata - subtle and minimal */
     .draft-meta {
         margin-top: 20px;
         padding-top: 16px;
@@ -332,54 +327,6 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # 📊 GOOGLE SHEETS INTEGRATION
 # ------------------------------
 SHEET_ID = "1DhqfIYM92gTdQ3yku233tLlkfIZsgcI9MVS_MvNg_Cc"
-
-# ------------------------------
-# 📧 EMAIL SENDING CONFIGURATION
-# ------------------------------
-# NOTE: For security, use Streamlit Secrets or environment variables for real credentials.
-# The user must set these environment variables for the app to work with a real SMTP server.
-SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "entremotivator@gmail.com") # Using the user's requested sender email
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "YOUR_APP_PASSWORD") # IMPORTANT: Use an App Password, not your main password
-TRACKING_PIXEL_URL = "https://your-tracking-server.com/track?email_id={email_id}&recipient={recipient}"
-
-def send_email(to_address, subject, html_body, email_id=None):
-    """Sends an email using SMTP with an optional tracking pixel."""
-    
-    if not all([SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD]):
-        st.error("Email sending failed: SMTP credentials not configured. Please set SMTP_SERVER, SMTP_USERNAME, and SMTP_PASSWORD environment variables.")
-        return False
-
-    msg = MIMEMultipart('alternative')
-    msg['From'] = SMTP_USERNAME
-    msg['To'] = to_address
-    msg['Subject'] = subject
-
-    # 1. Add Tracking Pixel to HTML Body
-    if email_id:
-        # Generate a unique tracking URL
-        tracking_url = TRACKING_PIXEL_URL.format(email_id=email_id, recipient=to_address)
-        # Embed the 1x1 pixel image (invisible)
-        tracking_pixel = f'<img src="{tracking_url}" width="1" height="1" style="display:none;">'
-        html_body_with_tracking = html_body + tracking_pixel
-    else:
-        html_body_with_tracking = html_body
-
-    # 2. Attach HTML content
-    part2 = MIMEText(html_body_with_tracking, 'html')
-    msg.attach(part2)
-
-    # 3. Send the email
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()  # Secure the connection
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_USERNAME, to_address, msg.as_string())
-        return True
-    except Exception as e:
-        st.error(f"Email sending failed: {e}")
-        return False
 
 def load_data_from_gsheet(credentials_dict):
     """Load data from Google Sheet using provided credentials."""
@@ -432,7 +379,7 @@ def load_data_from_gsheet(credentials_dict):
         return generate_mock_data(num_emails=25)
 
 def save_draft(email_data, body, credentials_dict):
-    """Save email draft body to the AIreply column in the Google Sheet."""
+    """Save email draft body to the AIreply column in the Google Sheet (mock: session only)."""
     try:
         scope = [
             "https://spreadsheets.google.com/feeds",
@@ -461,7 +408,6 @@ def save_draft(email_data, body, credentials_dict):
 # ------------------------------
 # 📝 MOCK DATA GENERATION
 # ------------------------------
-
 def get_initials(name):
     """Extract initials from sender name."""
     if not name or name == "Unknown Sender":
@@ -496,7 +442,7 @@ def generate_mock_data(num_emails=25):
             "sender name": "Custom All Stars",
             "sender email": "customallstars@gmail.com",
             "subject": "ai_systems_checklist",
-            "summary": "I'm unable to access external links or content such as the email you referenced. Please provide the text of the email, and I'll be happy to summarize it for you.",
+            "summary": "Mock summary for AI systems checklist.",
             "date": "2025-10-09",
             "attachment": "No",
             "aireply": "hey there",
@@ -507,7 +453,7 @@ def generate_mock_data(num_emails=25):
             "sender name": "Blogz Team",
             "sender email": "info@blogz.life",
             "subject": "[Blogz- The Blogging Community] A new subscriber has (been) registered!",
-            "summary": "New subscriber on Blogz: yaralennon29 (ys4058319@gmail.com).",
+            "summary": "New subscriber on Blogz: example user.",
             "date": "2025-08-23",
             "attachment": "No",
             "aireply": "who are you",
@@ -553,31 +499,31 @@ def generate_mock_data(num_emails=25):
         "The customer is still experiencing login issues. Need your technical input on the solution.",
         "Detailed proposal for implementing a dark mode theme across all platforms.",
         "Legal review required for the new vendor contract before signing.",
-        "We've gathered user feedback on the recent design changes. Mostly positive, but a few concerns.",
+        "We have gathered user feedback on the recent design changes.",
         "Requesting two days off next week for a personal appointment.",
         "Checking on the status of the latest vendor invoice payment.",
         "A critical security flaw was identified in the login module. Immediate action required.",
-        "Introducing our newest team member, Alex Johnson, who will be joining the Engineering team.",
-        "Your QPR meeting is scheduled for next Tuesday. Please prepare your self-assessment.",
+        "Introducing our newest team member who will be joining the Engineering team.",
+        "Your QPR meeting is scheduled for next Tuesday.",
         "New guidelines for remote work eligibility and office attendance.",
-        "Project Alpha deadline needs to be pushed by two weeks due to resource constraints.",
-        "Summary of action items from yesterday's client meeting. Please review and confirm.",
-        "Weekly team status report is due by Friday EOD. Please submit your updates.",
+        "Project deadline needs to be pushed due to resource constraints.",
+        "Summary of action items from yesterday's client meeting.",
+        "Weekly team status report is due by Friday EOD.",
         "Requesting approval to purchase new laptops for the development team.",
         "Mandatory security training session scheduled for Thursday afternoon.",
-        "Office will be moving to a new location next quarter. Details and timeline inside.",
-        "Updated onboarding checklist for new hires. Please review and provide feedback.",
+        "Office will be moving to a new location next quarter.",
+        "Updated onboarding checklist for new hires.",
         "Monthly expense reports need to be submitted by the end of this week.",
-        "Exploring a strategic partnership with TechPartner Inc. Initial proposal attached.",
-        "Year-end performance bonuses will be discussed in next week's leadership meeting.",
+        "Exploring a strategic partnership with a new vendor.",
+        "Year-end performance bonuses will be discussed soon.",
     ]
     
     ai_reply_templates = [
         "<p>Thank you for your email regarding <strong>{subject}</strong>. I have reviewed the details and will follow up with specific action items by end of day.</p><p>In the meantime, please let me know if you need any additional information.</p><p>Best regards</p>",
         "<p>I appreciate you bringing <strong>{subject}</strong> to my attention. This requires careful consideration and I will provide a comprehensive response within 24 hours.</p><p>Thank you for your patience.</p>",
         "<p>Regarding <strong>{subject}</strong>, I suggest we schedule a brief meeting to discuss this in detail. I have availability tomorrow afternoon or Thursday morning.</p><p>Please let me know what works best for you.</p><p>Best regards</p>",
-        "<p>Thank you for the update on <strong>{subject}</strong>. I've reviewed the information and agree with the proposed approach.</p><p>Let's proceed as discussed and reconvene next week to review progress.</p>",
-        "<p>I've received your email about <strong>{subject}</strong> and am currently reviewing the attached documents. I should have feedback for you by tomorrow morning.</p><p>Thanks for your thoroughness on this matter.</p>",
+        "<p>Thank you for the update on <strong>{subject}</strong>. I have reviewed the information and agree with the proposed approach.</p><p>Let us proceed as discussed and reconvene next week to review progress.</p>",
+        "<p>I have received your email about <strong>{subject}</strong> and am currently reviewing the attached documents. I should have feedback for you by tomorrow morning.</p><p>Thanks for your thoroughness on this matter.</p>",
     ]
     
     emails = example_emails.copy()
@@ -618,7 +564,6 @@ def generate_mock_data(num_emails=25):
 # ------------------------------
 # 📊 UI RENDERING FUNCTIONS
 # ------------------------------
-
 def display_stats(df):
     """Display email statistics in colorful cards."""
     total_emails = len(df)
@@ -663,14 +608,14 @@ def display_email_card(email_data, index, credentials_dict=None):
 
     try:
         formatted_date = datetime.strptime(str(date), "%Y-%m-%d").strftime("%b %d, %Y")
-    except:
+    except Exception:
         formatted_date = str(date)
 
     has_attachment = str(attachment).lower() in ["yes", "true", "1"]
     has_ai_reply = bool(ai_reply and str(ai_reply).strip() not in ["", "nan", "None", "null"])
     
-    attachment_tag = f'<span class="tag attachment">📎 Attachment</span>' if has_attachment else f'<span class="tag no-attachment">No Attachment</span>'
-    ai_tag = f'<span class="tag ai">🤖 AI Suggestion</span>' if has_ai_reply else ''
+    attachment_tag = '<span class="tag attachment">📎 Attachment</span>' if has_attachment else '<span class="tag no-attachment">No Attachment</span>'
+    ai_tag = '<span class="tag ai">🤖 AI Suggestion</span>' if has_ai_reply else ''
     
     ai_reply_preview = ""
     if has_ai_reply:
@@ -737,78 +682,89 @@ def display_email_card(email_data, index, credentials_dict=None):
 def render_compose(email_data=None):
     """Renders the compose page for replying to an email or drafting a new one."""
     st.markdown("## ✉️ Compose Email")
-    
-    if st.session_state.get('use_ai_reply') and email_data:
-        initial_body = email_data.get('aireply', '')
+
+    # Check if coming from Sent (Re-send preset)
+    preset = st.session_state.pop("compose_preset", None)
+
+    if preset is not None:
+        initial_body = preset.get("body", "")
+        reply_subject = preset.get("subject", "")
+        recipient = preset.get("to", "")
+        preset_cc = preset.get("cc", "")
+        preset_editor_mode = preset.get("editor_mode", "Plain Text")
     else:
-        initial_body = ""
-    
-    if email_data:
-        st.info(f"**Replying to:** {email_data.get('sender name', 'Unknown')} - {email_data.get('subject', 'No Subject')}")
-        
-        reply_subject = f"Re: {email_data.get('subject', '')}"
-        recipient = email_data.get('sender email', '')
-        
-        # Show original email content
-        with st.expander("📧 View Original Email", expanded=False):
-            st.markdown(f"**From:** {email_data.get('sender name', 'Unknown')} ({email_data.get('sender email', '')})")
-            st.markdown(f"**Department:** {email_data.get('department', 'N/A')}")
-            st.markdown(f"**Date:** {email_data.get('date', 'N/A')}")
-            st.markdown(f"**Summary:** {email_data.get('summary', 'No summary available')}")
-            if email_data.get('aireply'):
-                st.markdown("---")
-                st.markdown("**AI Suggestion:**")
-                st.markdown(email_data.get('aireply', ''), unsafe_allow_html=True)
-        
-        # Template selection for reply
-        st.markdown("### 📝 Choose Reply Method")
-        reply_method = st.radio(
-            "How would you like to reply?",
-            options=["Custom Message", "Use Template", "Use AI Suggestion"],
-            horizontal=True
-        )
-        
-        if reply_method == "Use AI Suggestion":
-            ai_reply_body = email_data.get('aireply', '')
-            initial_body = ai_reply_body if ai_reply_body else "No AI suggestion available for this email."
-        elif reply_method == "Use Template":
-            st.markdown("**Select a Template:**")
-            templates = {
-                "Acknowledgment": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for your email regarding <strong>{email_data.get('subject', 'this matter')}</strong>. I have reviewed the details and will follow up with specific action items by end of day.</p><p>In the meantime, please let me know if you need any additional information.</p><p>Best regards</p>",
-                "Schedule Meeting": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Regarding <strong>{email_data.get('subject', 'this matter')}</strong>, I suggest we schedule a brief meeting to discuss this in detail. I have availability tomorrow afternoon or Thursday morning.</p><p>Please let me know what works best for you.</p><p>Best regards</p>",
-                "Request More Info": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for reaching out about <strong>{email_data.get('subject', 'this matter')}</strong>. To better assist you, could you please provide additional details about:</p><ul><li>Specific requirements</li><li>Timeline expectations</li><li>Any relevant documentation</li></ul><p>Looking forward to your response.</p><p>Best regards</p>",
-                "Approval": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for the update on <strong>{email_data.get('subject', 'this matter')}</strong>. I've reviewed the information and approve the proposed approach.</p><p>Let's proceed as discussed and reconvene next week to review progress.</p><p>Best regards</p>",
-                "Follow Up": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>I've received your email about <strong>{email_data.get('subject', 'this matter')}</strong> and am currently reviewing the details. I should have feedback for you by tomorrow morning.</p><p>Thanks for your patience on this matter.</p><p>Best regards</p>"
-            }
+        preset_cc = ""
+        preset_editor_mode = "Plain Text"
+        if st.session_state.get('use_ai_reply') and email_data:
+            initial_body = email_data.get('aireply', '')
+        else:
+            initial_body = ""
+        if email_data:
+            st.info(f"**Replying to:** {email_data.get('sender name', 'Unknown')} - {email_data.get('subject', 'No Subject')}")
+            reply_subject = f"Re: {email_data.get('subject', '')}"
+            recipient = email_data.get('sender email', '')
             
-            template_choice = st.selectbox(
-                "Choose a template:",
-                options=list(templates.keys())
+            with st.expander("📧 View Original Email", expanded=False):
+                st.markdown(f"**From:** {email_data.get('sender name', 'Unknown')} ({email_data.get('sender email', '')})")
+                st.markdown(f"**Department:** {email_data.get('department', 'N/A')}")
+                st.markdown(f"**Date:** {email_data.get('date', 'N/A')}")
+                st.markdown(f"**Summary:** {email_data.get('summary', 'No summary available')}")
+                if email_data.get('aireply'):
+                    st.markdown("---")
+                    st.markdown("**AI Suggestion:**")
+                    st.markdown(email_data.get('aireply', ''), unsafe_allow_html=True)
+            
+            st.markdown("### 📝 Choose Reply Method")
+            reply_method = st.radio(
+                "How would you like to reply?",
+                options=["Custom Message", "Use Template", "Use AI Suggestion"],
+                horizontal=True
             )
             
-            if template_choice:
-                initial_body = templates[template_choice]
-                st.markdown("**Template Preview:**")
-                st.markdown(f"<div style='background: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #4CAF50;'>{initial_body}</div>", unsafe_allow_html=True)
-    else:
-        st.info("Composing a new email.")
-        reply_subject = ""
-        recipient = ""
-    
+            if reply_method == "Use AI Suggestion":
+                ai_reply_body = email_data.get('aireply', '')
+                initial_body = ai_reply_body if ai_reply_body else "No AI suggestion available for this email."
+            elif reply_method == "Use Template":
+                st.markdown("**Select a Template:**")
+                templates = {
+                    "Acknowledgment": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for your email regarding <strong>{email_data.get('subject', 'this matter')}</strong>. I have reviewed the details and will follow up with specific action items by end of day.</p><p>In the meantime, please let me know if you need any additional information.</p><p>Best regards</p>",
+                    "Schedule Meeting": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Regarding <strong>{email_data.get('subject', 'this matter')}</strong>, I suggest we schedule a brief meeting to discuss this in detail. I have availability tomorrow afternoon or Thursday morning.</p><p>Please let me know what works best for you.</p><p>Best regards</p>",
+                    "Request More Info": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for reaching out about <strong>{email_data.get('subject', 'this matter')}</strong>. To better assist you, could you please provide additional details about:</p><ul><li>Specific requirements</li><li>Timeline expectations</li><li>Any relevant documentation</li></ul><p>Looking forward to your response.</p><p>Best regards</p>",
+                    "Approval": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>Thank you for the update on <strong>{email_data.get('subject', 'this matter')}</strong>. I have reviewed the information and approve the proposed approach.</p><p>Let us proceed as discussed and reconvene next week to review progress.</p><p>Best regards</p>",
+                    "Follow Up": f"<p>Dear {email_data.get('sender name', 'there')},</p><p>I have received your email about <strong>{email_data.get('subject', 'this matter')}</strong> and am currently reviewing the details. I should have feedback for you by tomorrow morning.</p><p>Thanks for your patience on this matter.</p><p>Best regards</p>"
+                }
+                
+                template_choice = st.selectbox(
+                    "Choose a template:",
+                    options=list(templates.keys())
+                )
+                
+                if template_choice:
+                    initial_body = templates[template_choice]
+                    st.markdown("**Template Preview:**")
+                    st.markdown(f"<div style='background: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 4px solid #4CAF50;'>{initial_body}</div>", unsafe_allow_html=True)
+        else:
+            st.info("Composing a new email.")
+            reply_subject = ""
+            recipient = ""
+
     st.markdown("---")
     st.markdown("### ✍️ Compose Your Message")
     
     with st.form("compose_form"):
         to_address = st.text_input("📧 To:", value=recipient, placeholder="recipient@example.com")
-        cc_address = st.text_input("📧 CC:", placeholder="cc@example.com (optional)")
+        cc_address = st.text_input("📧 CC:", value=preset_cc, placeholder="cc@example.com (optional)")
         subject = st.text_input("📋 Subject:", value=reply_subject, placeholder="Email subject")
         
         st.markdown("**📝 Message Body:**")
         
-        # Editor options
         col_editor1, col_editor2 = st.columns([1, 4])
         with col_editor1:
-            editor_mode = st.selectbox("Editor Mode:", ["Plain Text", "HTML"])
+            editor_mode = st.selectbox(
+                "Editor Mode:",
+                ["Plain Text", "HTML"],
+                index=0 if preset_editor_mode == "Plain Text" else 1
+            )
         with col_editor2:
             if editor_mode == "HTML":
                 st.info("HTML mode: You can use HTML tags for formatting (e.g., <strong>, <em>, <ul>, <li>)")
@@ -821,7 +777,6 @@ def render_compose(email_data=None):
             label_visibility="collapsed"
         )
         
-        # Formatting toolbar hint
         if editor_mode == "HTML":
             st.markdown("""
             <div style='background: #e8f5e9; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 13px;'>
@@ -833,7 +788,6 @@ def render_compose(email_data=None):
             </div>
             """, unsafe_allow_html=True)
         
-        # Attachment section
         st.markdown("**📎 Attachments:**")
         uploaded_files = st.file_uploader("Add files", accept_multiple_files=True, label_visibility="collapsed")
         
@@ -853,36 +807,32 @@ def render_compose(email_data=None):
             preview_button = st.form_submit_button("👁️ Preview", use_container_width=True)
         
         if send_button:
-            if not (to_address and subject and body):
-                st.error("❌ Please fill in To, Subject, and Body fields before sending.")
+            if to_address and subject and body:
+                # Log sent email in session_state
+                if 'sent_emails' not in st.session_state:
+                    st.session_state['sent_emails'] = []
+                attachments_list = [file.name for file in uploaded_files] if uploaded_files else []
+                sent_record = {
+                    "to": to_address,
+                    "cc": cc_address,
+                    "subject": subject,
+                    "body": body,
+                    "editor_mode": editor_mode,
+                    "attachments": attachments_list,
+                    "timestamp": datetime.now().isoformat(),
+                    "original_email": email_data,
+                }
+                st.session_state['sent_emails'].append(sent_record)
+
+                st.success(f"✅ Email sent successfully to {to_address}!")
+                st.balloons()
+                time.sleep(1)
+                st.session_state['page'] = 'inbox'
+                st.session_state['selected_email'] = None
+                st.session_state['use_ai_reply'] = False
+                st.rerun()
             else:
-                # Generate a unique ID for tracking this specific email
-                email_id = str(int(time.time() * 1000)) + "-" + str(random.randint(1000, 9999))
-                
-                # Call the new email sending function
-                if send_email(to_address, subject, body, email_id=email_id):
-                    st.success(f"✅ Email sent successfully to {to_address}! Tracking ID: {email_id}")
-                    st.balloons()
-                    
-                    # Save tracking info to session state
-                    if 'sent_emails' not in st.session_state:
-                        st.session_state['sent_emails'] = []
-                    st.session_state['sent_emails'].append({
-                        'id': email_id,
-                        'to': to_address,
-                        'subject': subject,
-                        'timestamp': datetime.now().isoformat(),
-                        'status': 'Sent (Awaiting Open)'
-                    })
-                    
-                    # Clear form and state
-                    time.sleep(1)
-                    st.session_state['page'] = 'inbox'
-                    st.session_state['selected_email'] = None
-                    st.session_state['use_ai_reply'] = False
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to send email. Check the error message above for details.")
+                st.error("❌ Please fill in To, Subject, and Body fields before sending.")
         
         if draft_button:
             if 'drafts' not in st.session_state:
@@ -907,18 +857,19 @@ def render_compose(email_data=None):
         if preview_button:
             st.markdown("---")
             st.markdown("### 👁️ Email Preview")
+            display_body = body if editor_mode == "HTML" else body.replace(chr(10), "<br>")
             st.markdown(f"""
             <div style='background: white; padding: 20px; border-radius: 10px; border: 2px solid #e0e0e0;'>
                 <div style='color: black;'><strong>To:</strong> {to_address}</div>
                 {f"<div style='color: black;'><strong>CC:</strong> {cc_address}</div>" if cc_address else ""}
                 <div style='color: black;'><strong>Subject:</strong> {subject}</div>
                 <hr style='margin: 15px 0;'>
-                <div style='color: black;'>{body if editor_mode == "HTML" else body.replace(chr(10), "<br>")}</div>
+                <div style='color: black;'>{display_body}</div>
             </div>
             """, unsafe_allow_html=True)
 
 def render_drafts():
-    """Renders the drafts page showing saved draft emails - IMPROVED VERSION."""
+    """Renders the drafts page showing saved draft emails."""
     st.markdown("## 📋 Drafts")
     
     if 'drafts' not in st.session_state or len(st.session_state['drafts']) == 0:
@@ -934,7 +885,6 @@ def render_drafts():
     st.markdown("---")
     
     for idx, draft in enumerate(st.session_state['drafts']):
-        # Get draft-specific fields
         subject = draft.get('subject', 'No Subject')
         body = draft.get('body', 'No content')
         timestamp = draft.get('timestamp', datetime.now().isoformat())
@@ -942,19 +892,16 @@ def render_drafts():
         cc_address = draft.get('cc', '')
         attachments = draft.get('attachments', [])
         
-        # Format timestamp
         try:
             dt = datetime.fromisoformat(timestamp)
             formatted_timestamp = dt.strftime("%B %d, %Y at %I:%M %p")
-        except:
+        except Exception:
             formatted_timestamp = timestamp
         
-        # Clean body preview for summary
         body_preview = re.sub('<[^<]+?>', '', str(body))
         body_preview = body_preview.replace('\n', ' ').strip()
         body_preview = body_preview[:200] + "..." if len(body_preview) > 200 else body_preview
         
-        # Render the improved draft card
         draft_html = f"""
         <div class="draft-card">
             <div class="draft-timestamp">
@@ -977,7 +924,6 @@ def render_drafts():
         """
         st.markdown(draft_html, unsafe_allow_html=True)
         
-        # Optional: Show original email reference if it exists
         if draft.get('original_email'):
             with st.expander("📧 Original Email Reference"):
                 orig = draft['original_email']
@@ -1000,41 +946,97 @@ def render_drafts():
         
         st.markdown("---")
 
-def render_tracking_page():
-    """Renders the page to view sent emails and their tracking status."""
-    st.markdown("# 📊 Sent Email Tracking")
-    
-    if 'sent_emails' not in st.session_state or not st.session_state['sent_emails']:
-        st.info("No emails have been sent yet. Send an email from the Compose page to start tracking!")
+def render_sent():
+    """Render the Sent Center page listing all sent emails with actions."""
+    st.markdown("## 📤 Sent Emails")
+
+    if 'sent_emails' not in st.session_state or len(st.session_state['sent_emails']) == 0:
+        st.info("No sent emails yet. Send an email from Compose to see it here!")
+        if st.button("✉️ Compose New Email"):
+            st.session_state['page'] = 'compose'
+            st.session_state['selected_email'] = None
+            st.rerun()
         return
 
-    # Convert sent emails list to a DataFrame for display
-    sent_df = pd.DataFrame(st.session_state['sent_emails'])
-    
-    # Simulate a change in status for demonstration purposes
-    # In a real app, this would query a database/tracking server
-    def get_simulated_status(status):
-        if status == 'Sent (Awaiting Open)' and random.random() < 0.3:
-            return 'Opened'
-        return status
-        
-    sent_df['status'] = sent_df['status'].apply(get_simulated_status)
-    
-    st.dataframe(
-        sent_df[['timestamp', 'to', 'subject', 'id', 'status']],
-        column_config={
-            "timestamp": st.column_config.DatetimeColumn("Sent Time", format="YYYY-MM-DD HH:mm:ss"),
-            "to": "Recipient",
-            "subject": "Subject",
-            "id": "Tracking ID",
-            "status": st.column_config.TextColumn("Status")
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-    
+    st.success(f"You have **{len(st.session_state['sent_emails'])}** sent email(s).")
     st.markdown("---")
-    st.warning("⚠️ **Note on Tracking:** The 'Status' column is currently simulated for demonstration. Real tracking requires a dedicated tracking server to process the pixel URL requests.")
+
+    for idx, sent in enumerate(reversed(st.session_state['sent_emails'])):
+        real_index = len(st.session_state['sent_emails']) - 1 - idx
+
+        subject = sent.get("subject", "No Subject")
+        body = sent.get("body", "No content")
+        timestamp = sent.get("timestamp", "")
+        to_address = sent.get("to", "No recipient")
+        cc_address = sent.get("cc", "")
+        attachments = sent.get("attachments", [])
+        editor_mode = sent.get("editor_mode", "Plain Text")
+
+        try:
+            dt = datetime.fromisoformat(timestamp)
+            formatted_timestamp = dt.strftime("%B %d, %Y at %I:%M %p")
+        except Exception:
+            formatted_timestamp = timestamp
+
+        body_preview = re.sub('<[^<]+?>', '', str(body))
+        body_preview = body_preview.replace('\n', ' ').strip()
+        body_preview = body_preview[:220] + "..." if len(body_preview) > 220 else body_preview
+
+        sent_html = f"""
+        <div class="draft-card sent">
+            <div class="draft-timestamp">
+                🕒 Sent: {formatted_timestamp}
+            </div>
+            <div class="draft-subject">{subject}</div>
+            <div class="draft-body-container">
+                <div class="draft-body-label">Sent Content ({editor_mode})</div>
+                <div class="draft-body-content">{body_preview}</div>
+            </div>
+            <div class="draft-meta">
+                <strong>To:</strong> {to_address}
+                {f"<br><strong>CC:</strong> {cc_address}" if cc_address else ""}
+                {f"<br><strong>Attachments:</strong> {', '.join(attachments)}" if attachments else ""}
+            </div>
+        </div>
+        """
+        st.markdown(sent_html, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("🔁 Re-send", key=f"resend_{real_index}", use_container_width=True):
+                st.session_state['selected_email'] = None
+                st.session_state['page'] = 'compose'
+                st.session_state['compose_preset'] = {
+                    "to": to_address,
+                    "cc": cc_address,
+                    "subject": subject,
+                    "body": body,
+                    "editor_mode": editor_mode,
+                }
+                st.rerun()
+        with col2:
+            if st.button("📋 Copy to Draft", key=f"copy_to_draft_{real_index}", use_container_width=True):
+                if 'drafts' not in st.session_state:
+                    st.session_state['drafts'] = []
+                st.session_state['drafts'].append({
+                    "subject": subject,
+                    "body": body,
+                    "timestamp": datetime.now().isoformat(),
+                    "to": to_address,
+                    "cc": cc_address,
+                    "editor_mode": editor_mode,
+                    "attachments": attachments,
+                    "original_email": sent.get("original_email"),
+                })
+                st.toast("Copied to Drafts!", icon="✅")
+                st.rerun()
+        with col3:
+            if st.button("🗑️ Delete", key=f"delete_sent_{real_index}", use_container_width=True):
+                st.session_state['sent_emails'].pop(real_index)
+                st.toast("Sent record deleted.", icon="🗑️")
+                st.rerun()
+
+        st.markdown("---")
 
 def render_inbox(df, credentials_dict=None):
     """Renders the inbox page with email cards and stats."""
@@ -1055,7 +1057,6 @@ def render_inbox(df, credentials_dict=None):
 # ------------------------------
 # 🎯 MAIN APPLICATION
 # ------------------------------
-
 def main():
     """Main application function for the single-page Streamlit app."""
     
@@ -1067,15 +1068,19 @@ def main():
         st.session_state['use_ai_reply'] = False
     if 'df' not in st.session_state:
         st.session_state['df'] = generate_mock_data(num_emails=25)
-    
-    credentials_dict = None
+    if 'drafts' not in st.session_state:
+        st.session_state['drafts'] = []
+    if 'sent_emails' not in st.session_state:
+        st.session_state['sent_emails'] = []
 
+    credentials_dict = None
+    
     st.title("📥 InboxKeep Pro: Email Management Dashboard")
     st.markdown("A comprehensive email management application with beautiful card-based UI, AI-powered suggestions, and Google Sheets integration.")
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 4])
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
     with col1:
         if st.button("📥 Inbox", use_container_width=True, type="primary" if st.session_state['page'] == 'inbox' else "secondary"):
             st.session_state['page'] = 'inbox'
@@ -1093,13 +1098,12 @@ def main():
             st.rerun()
     with col4:
         sent_count = len(st.session_state.get('sent_emails', []))
-        if st.button(f"📊 Sent ({sent_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'tracking' else "secondary"):
-            st.session_state['page'] = 'tracking'
+        if st.button(f"📤 Sent ({sent_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'sent' else "secondary"):
+            st.session_state['page'] = 'sent'
             st.rerun()
     
     st.markdown("---")
     
-    # --- Sidebar Configuration (credentials only) ---
     with st.sidebar:
         st.markdown("### 🔐 Google Service Account Credentials")
         st.markdown("""
@@ -1144,10 +1148,9 @@ def main():
             st.warning("⚠️ No credentials uploaded. Using mock data.")
             
         st.markdown("---")
-        st.markdown(f"### 📊 Sheet Configuration")
+        st.markdown("### 📊 Sheet Configuration")
         st.info(f"📊 Sheet ID: `{SHEET_ID}`")
         
-        # Filters in sidebar (only for inbox page)
         if st.session_state['page'] == 'inbox':
             st.markdown("---")
             st.markdown("### 🔍 Inbox Filters")
@@ -1196,18 +1199,20 @@ def main():
         
         st.markdown("---")
         st.markdown("### 📊 Data Summary")
-        st.info(f"📧 Showing **{len(st.session_state.get('df_view', st.session_state['df']))}** emails")
+        current_view_len = len(st.session_state.get('df_view', st.session_state['df']))
+        st.info(f"📧 Showing **{current_view_len}** emails in inbox view")
         st.caption(f"🗄️ Total in database: **{len(st.session_state['df'])}** emails")
-
-        # --- Main Content Area ---
-        if st.session_state['page'] == 'inbox':
-            render_inbox(st.session_state.get('df_view', st.session_state['df']), credentials_dict)
-        elif st.session_state['page'] == 'compose':
-            render_compose(st.session_state.get('selected_email'))
-        elif st.session_state['page'] == 'drafts':
-            render_drafts()
-        elif st.session_state['page'] == 'tracking':
-            render_tracking_page()
+        st.caption(f"📋 Drafts: **{len(st.session_state.get('drafts', []))}**")
+        st.caption(f"📤 Sent: **{len(st.session_state.get('sent_emails', []))}**")
+    
+    if st.session_state['page'] == 'inbox':
+        render_inbox(st.session_state.get('df_view', st.session_state['df']), credentials_dict)
+    elif st.session_state['page'] == 'compose':
+        render_compose(st.session_state.get('selected_email'))
+    elif st.session_state['page'] == 'drafts':
+        render_drafts()
+    elif st.session_state['page'] == 'sent':
+        render_sent()
 
 if __name__ == "__main__":
     main()
