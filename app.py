@@ -878,7 +878,7 @@ def render_compose(email_data=None):
                     # Clear form and state
                     time.sleep(1)
                     st.session_state['page'] = 'inbox'
-            st.session_state['selected_email'] = None
+                    st.session_state['selected_email'] = None
                     st.session_state['use_ai_reply'] = False
                     st.rerun()
                 else:
