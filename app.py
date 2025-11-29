@@ -878,7 +878,7 @@ def render_compose(email_data=None):
                     # Clear form and state
                     time.sleep(1)
                     st.session_state['page'] = 'inbox'
-                    st.session_state['selected_email'] = None
+            st.session_state['selected_email'] = None
                     st.session_state['use_ai_reply'] = False
                     st.rerun()
                 else:
@@ -1081,21 +1081,21 @@ def main():
             st.session_state['page'] = 'inbox'
             st.session_state['selected_email'] = None
             st.rerun()
-	    with col2:
+    with col2:
         if st.button("✉️ Compose", use_container_width=True, type="primary" if st.session_state['page'] == 'compose' else "secondary"):
-	            st.session_state['page'] = 'compose'
-	            st.session_state['selected_email'] = None
-	            st.rerun()
-	    with col3:
+            st.session_state['page'] = 'compose'
+            st.session_state['selected_email'] = None
+            st.rerun()
+    with col3:
         drafts_count = len(st.session_state.get('drafts', []))
         if st.button(f"📋 Drafts ({drafts_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'drafts' else "secondary"):
-	            st.session_state['page'] = 'drafts'
-	            st.rerun()
-	    with col4:
+            st.session_state['page'] = 'drafts'
+            st.rerun()
+    with col4:
         sent_count = len(st.session_state.get('sent_emails', []))
         if st.button(f"📊 Sent ({sent_count})", use_container_width=True, type="primary" if st.session_state['page'] == 'tracking' else "secondary"):
             st.session_state['page'] = 'tracking'
-	            st.rerun()
+            st.rerun()
     
     st.markdown("---")
     
@@ -1199,15 +1199,15 @@ def main():
         st.info(f"📧 Showing **{len(st.session_state.get('df_view', st.session_state['df']))}** emails")
         st.caption(f"🗄️ Total in database: **{len(st.session_state['df'])}** emails")
 
-	    # --- Main Content Area ---
-	    if st.session_state['page'] == 'inbox':
-	        render_inbox(st.session_state.get('df_view', st.session_state['df']), credentials_dict)
-	    elif st.session_state['page'] == 'compose':
-	        render_compose(st.session_state.get('selected_email'))
-	    elif st.session_state['page'] == 'drafts':
-	        render_drafts()
-	    elif st.session_state['page'] == 'tracking':
-	        render_tracking_page()
+        # --- Main Content Area ---
+        if st.session_state['page'] == 'inbox':
+            render_inbox(st.session_state.get('df_view', st.session_state['df']), credentials_dict)
+        elif st.session_state['page'] == 'compose':
+            render_compose(st.session_state.get('selected_email'))
+        elif st.session_state['page'] == 'drafts':
+            render_drafts()
+        elif st.session_state['page'] == 'tracking':
+            render_tracking_page()
 
 if __name__ == "__main__":
     main()
